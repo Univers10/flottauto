@@ -1,0 +1,6 @@
+Generic single-database configuration.
+
+To initialize migrations, run:
+
+    alembic revision --autogenerate -m "initial"
+    alembic upgrade head
