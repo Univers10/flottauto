@@ -87,9 +87,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            Démo : admin@flottauto.com / admin123
-          </p>
         </CardContent>
       </Card>
     </div>
