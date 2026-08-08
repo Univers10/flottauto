@@ -1,3 +1,4 @@
+import os
 import random
 from datetime import date, timedelta
 
@@ -5,6 +6,13 @@ from app.core.database import SessionLocal, engine, Base
 from app.core.security import get_password_hash
 from app import models, schemas, crud
 from app.services import alerts
+
+
+def required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"Variable d'environnement requise: {name}")
+    return value
 
 
 def create_demo_data():
@@ -24,7 +32,7 @@ def create_demo_data():
         db,
         schemas.UserCreate(
             email="admin@flottauto.com",
-            password="admin123",
+            password=required_env("FLOTTAUTO_ADMIN_PASSWORD"),
             first_name="Alice",
             last_name="Durand",
             role=models.Role.ADMIN,
@@ -37,7 +45,7 @@ def create_demo_data():
         db,
         schemas.UserCreate(
             email="manager@flottauto.com",
-            password="manager123",
+            password=required_env("FLOTTAUTO_MANAGER_PASSWORD"),
             first_name="Bob",
             last_name="Martin",
             role=models.Role.MANAGER,

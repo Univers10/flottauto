@@ -1,4 +1,3 @@
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -7,6 +6,7 @@ from alembic import context
 
 # Import models and Base so Alembic can autogenerate migrations
 from app.core.database import Base
+from app.core.config import get_settings
 from app.models import *  # noqa: F401, F403
 
 # this is the Alembic Config object
@@ -16,8 +16,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from environment if available
-url = os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+# Override sqlalchemy.url from application settings (reads backend/.env)
+url = get_settings().DATABASE_URL
 config.set_main_option("sqlalchemy.url", url)
 
 target_metadata = Base.metadata

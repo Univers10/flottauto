@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Car, ImagePlus, Loader2, Save, X } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api } from "@/lib/api";
+import { api, uploadVehiclePhoto } from "@/lib/api";
 import { toast } from "sonner";
-import type { Driver } from "@/types";
+import type { Driver, Vehicle } from "@/types";
 
 const vehicleTypes = [
   { value: "car", label: "Voiture" },
@@ -49,6 +49,8 @@ export default function NewVehiclePage() {
   const router = useRouter();
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [saving, setSaving] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [form, setForm] = useState({
     registration: "",
     vin: "",
@@ -67,8 +69,8 @@ export default function NewVehiclePage() {
 
   useEffect(() => {
     api
-      .get<{ items: Driver[] }>("/drivers?size=100")
-      .then((res) => setDrivers(res.items))
+      .get<Driver[]>("/drivers?size=100")
+      .then(setDrivers)
       .catch(() => toast.error("Erreur de chargement des chauffeurs"));
   }, []);
 
@@ -76,11 +78,24 @@ export default function NewVehiclePage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
+  function removePhoto() {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhoto(null);
+    setPhotoPreview(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/vehicles", {
+      const created = await api.post<Vehicle>("/vehicles", {
         registration: form.registration,
         vin: form.vin || undefined,
         brand: form.brand,
@@ -95,8 +110,13 @@ export default function NewVehiclePage() {
         notes: form.notes || undefined,
         driver_id: form.driver_id ? Number(form.driver_id) : undefined,
       });
+      if (photo) {
+        const formData = new FormData();
+        formData.set("file", photo);
+        await uploadVehiclePhoto(created.id, formData);
+      }
       toast.success("Véhicule créé avec succès");
-      router.push("/vehicles");
+      router.push(`/vehicles/${created.id}`);
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la création");
     } finally {
@@ -128,6 +148,42 @@ export default function NewVehiclePage() {
               <CardTitle className="text-lg font-semibold">Informations générales</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label>Photo du véhicule</Label>
+                {photoPreview ? (
+                  <div className="relative h-48 overflow-hidden rounded-2xl border border-border/60 bg-muted/40">
+                    <img src={photoPreview} alt="Aperçu" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={removePhoto}
+                      className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-xl bg-card/90 text-foreground shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-rose-50 hover:text-rose-600"
+                      title="Retirer la photo"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/60 bg-muted/20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted/40">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                      {photo ? (
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      ) : (
+                        <ImagePlus className="h-6 w-6 text-primary" />
+                      )}
+                    </span>
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <Car className="h-4 w-4" />
+                      Cliquez pour choisir une photo
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                  </label>
+                )}
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="registration">Immatriculation *</Label>

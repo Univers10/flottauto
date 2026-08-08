@@ -34,20 +34,22 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-cp ..\.env.example .env
+cp .env.example .env
 ```
 
-Editer `backend/.env` si nécessaire :
+Editer `backend/.env` si nécessaire (remplacer les valeurs par vos propres secrets) :
 
 ```env
-DATABASE_URL=postgresql+psycopg2://flottauto:flottauto@localhost:5432/flottauto
-SECRET_KEY=change-me-in-production-use-a-64-char-random-string
+DATABASE_URL=postgresql+psycopg2://<user>:<password>@localhost:5432/flottauto
+SECRET_KEY=<générez-une-chaîne-aléatoire-de-64-caractères>
 ```
 
 ### 3. Initialiser la base et les données de démo
 
 ```bash
 cd backend
+FLOTTAUTO_ADMIN_PASSWORD=<mot-de-passe-admin> \
+FLOTTAUTO_MANAGER_PASSWORD=<mot-de-passe-manager> \
 python seed.py
 ```
 
@@ -65,16 +67,15 @@ La documentation Swagger est disponible sur http://localhost:8000/docs
 ```bash
 cd frontend
 npm install
-cp ..\.env.example .env.local
+cp .env.example .env.local
 npm run dev
 ```
 
 Le frontend sera accessible sur http://localhost:3000
 
-## Comptes de démonstration
+## Comptes
 
-- **Admin** : `admin@flottauto.com` / `admin123`
-- **Manager** : `manager@flottauto.com` / `manager123`
+Les comptes administrateur et manager sont créés par le script de seed avec les mots de passe fournis via les variables d'environnement `FLOTTAUTO_ADMIN_PASSWORD` et `FLOTTAUTO_MANAGER_PASSWORD` (aucun mot de passe n'est stocké dans le code).
 
 ## Modules MVP
 

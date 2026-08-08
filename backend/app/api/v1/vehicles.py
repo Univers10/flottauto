@@ -83,6 +83,62 @@ def delete_vehicle(
     return None
 
 
+@router.post("/{vehicle_id}/photo", response_model=schemas.VehicleRead)
+def upload_vehicle_photo(
+    vehicle_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    company_id = _company_id(current_user)
+    vehicle = crud.get_vehicle(db, vehicle_id, company_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    company_dir = UPLOAD_DIR / str(company_id) / "vehicles" / str(vehicle_id)
+    company_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "photo").suffix or ".jpg"
+    safe_name = f"photo_{os.urandom(4).hex()}{ext}"
+
+    file_path = company_dir / safe_name
+    with open(file_path, "wb") as f:
+        f.write(file.file.read())
+
+    if vehicle.photo_url:
+        old = company_dir / Path(vehicle.photo_url).name
+        if old.exists():
+            old.unlink()
+
+    vehicle.photo_url = f"/uploads/{company_id}/vehicles/{vehicle_id}/{safe_name}"
+    db.add(vehicle)
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+
+@router.delete("/{vehicle_id}/photo", response_model=schemas.VehicleRead)
+def delete_vehicle_photo(
+    vehicle_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    company_id = _company_id(current_user)
+    vehicle = crud.get_vehicle(db, vehicle_id, company_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    if vehicle.photo_url:
+        company_dir = UPLOAD_DIR / str(company_id) / "vehicles" / str(vehicle_id)
+        old = company_dir / Path(vehicle.photo_url).name
+        if old.exists():
+            old.unlink()
+        vehicle.photo_url = None
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+    return vehicle
+
+
 @router.post("/{vehicle_id}/documents", response_model=schemas.DocumentRead, status_code=status.HTTP_201_CREATED)
 def create_vehicle_document(
     vehicle_id: int,

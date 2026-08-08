@@ -11,6 +11,7 @@ import {
   FileText,
   Gauge,
   Landmark,
+  Loader2,
   Plus,
   Trash2,
   Upload,
@@ -41,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { api, uploadVehicleDocument, updateVehicle, listTollExpenses, createTollExpense } from "@/lib/api";
+import { api, uploadVehicleDocument, updateVehicle, listTollExpenses, createTollExpense, uploadVehiclePhoto, deleteVehiclePhoto } from "@/lib/api";
 import { toast } from "sonner";
 import type { Document, Driver, Vehicle, WorkOrder, VehicleStatus, TollExpense, TollPaymentMethod } from "@/types";
 
@@ -85,6 +86,7 @@ export default function VehicleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [docType, setDocType] = useState<string>("registration_card");
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
@@ -166,6 +168,36 @@ export default function VehicleDetailPage() {
       toast.error(err.message || "Erreur d'upload");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const updated = await uploadVehiclePhoto(vehicleId, formData);
+      setVehicle(updated);
+      toast.success("Photo mise à jour");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur d'upload de la photo");
+    } finally {
+      setPhotoUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handlePhotoDelete() {
+    if (!vehicle?.photo_url) return;
+    if (!confirm("Supprimer cette photo ?")) return;
+    try {
+      const updated = await deleteVehiclePhoto(vehicleId);
+      setVehicle(updated);
+      toast.success("Photo supprimée");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur");
     }
   }
 
@@ -282,6 +314,32 @@ export default function VehicleDetailPage() {
               <Badge className={cn("absolute top-4 right-4 rounded-lg border-0 px-3 py-1 font-medium", status.bg, status.text)}>
                 {status.label}
               </Badge>
+              <div className="absolute bottom-4 right-4 flex gap-2">
+                <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl bg-card/90 px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-card">
+                  {photoUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 text-primary" />
+                  )}
+                  {vehicle.photo_url ? "Changer la photo" : "Ajouter une photo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                    disabled={photoUploading}
+                  />
+                </label>
+                {vehicle.photo_url && (
+                  <button
+                    onClick={handlePhotoDelete}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-card/90 text-rose-600 shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-rose-50"
+                    title="Supprimer la photo"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex flex-col justify-center gap-4 p-6">
               <div>
