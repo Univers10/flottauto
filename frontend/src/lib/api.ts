@@ -73,7 +73,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  delete: (path: string) => request<unknown>(path, { method: "DELETE" }),
+  delete: <T = unknown>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 export async function login(email: string, password: string): Promise<{ access_token: string }> {
@@ -127,6 +127,9 @@ export const createVehicleDocument = (vehicleId: number, body: Partial<Document>
 export const uploadVehicleDocument = (vehicleId: number, formData: FormData) => uploadFile<Document>(`/vehicles/${vehicleId}/documents/upload`, formData);
 export const deleteVehicleDocument = (vehicleId: number, documentId: number) => api.delete(`/vehicles/${vehicleId}/documents/${documentId}`);
 export const deleteVehicle = (id: number) => api.delete(`/vehicles/${id}`);
+export const uploadVehiclePhoto = (vehicleId: number, formData: FormData) =>
+  uploadFile<Vehicle>(`/vehicles/${vehicleId}/photo`, formData);
+export const deleteVehiclePhoto = (vehicleId: number) => api.delete<Vehicle>(`/vehicles/${vehicleId}/photo`);
 
 // Drivers
 export const listDrivers = () => api.get<Driver[]>("/drivers");

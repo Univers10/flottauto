@@ -77,6 +77,7 @@ class VehicleCreate(BaseModel):
     status: VehicleStatus = VehicleStatus.AVAILABLE
     purchase_price: Decimal | None = None
     notes: str | None = None
+    photo_url: str | None = None
 
 
 class VehicleUpdate(VehicleCreate):

@@ -11,6 +11,13 @@ from app.services import alerts
 CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "point_entretien_des_cars.csv")
 
 
+def required_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"Variable d'environnement requise: {name}")
+    return value
+
+
 def parse_date(value: str, fallback: date) -> date:
     value = (value or "").strip()
     if not value:
@@ -41,17 +48,29 @@ def create_real_data():
 
     company = crud.create_company(
         db,
-        schemas.CompanyCreate(name="FlottAuto", slug="flottauto", currency="FCFA"),
+        schemas.CompanyCreate(name="FlottAuto", slug="flottauto", currency="XOF"),
     )
 
     crud.create_user(
         db,
         schemas.UserCreate(
             email="admin@flottauto.com",
-            password="admin123",
+            password=required_env("FLOTTAUTO_ADMIN_PASSWORD"),
             first_name="Admin",
             last_name="FlottAuto",
             role=models.Role.ADMIN,
+        ),
+        company_id=company.id,
+    )
+
+    crud.create_user(
+        db,
+        schemas.UserCreate(
+            email="manager@flottauto.com",
+            password=required_env("FLOTTAUTO_MANAGER_PASSWORD"),
+            first_name="Manager",
+            last_name="FlottAuto",
+            role=models.Role.MANAGER,
         ),
         company_id=company.id,
     )

@@ -4,10 +4,11 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: flottauto-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: flottauto
-      POSTGRES_PASSWORD: flottauto
-      POSTGRES_DB: flottauto
+      POSTGRES_USER: ${POSTGRES_USER:-flottauto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-flottauto}
     ports:
       - "5432:5432"
     volumes:
