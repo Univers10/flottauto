@@ -639,7 +639,7 @@ export default function VehicleDetailPage() {
                   <Wrench className="h-5 w-5 text-primary" />
                   Ordres de travail
                 </CardTitle>
-                <Button onClick={() => router.push("/maintenance/new")} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
+                <Button onClick={() => router.push(`/maintenance/new?vehicle_id=${vehicle.id}`)} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
                   <Plus className="h-4 w-4" />
                   Nouvelle intervention
                 </Button>

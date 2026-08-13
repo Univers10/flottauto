@@ -80,17 +80,21 @@ export default function WorkOrderDetailPage() {
   async function handlePhotoUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
-    const formData = new FormData(form);
-    const file = formData.get("file") as File;
-    if (!file || file.size === 0) {
-      toast.error("Veuillez sélectionner une photo");
+    const fileInput = form.elements.namedItem("file") as HTMLInputElement;
+    const files = fileInput?.files ? Array.from(fileInput.files) : [];
+    if (files.length === 0) {
+      toast.error("Veuillez sélectionner au moins une photo");
       return;
     }
-    formData.set("caption", photoCaption);
     setPhotoUploading(true);
     try {
-      await uploadWorkOrderPhoto(workOrderId, formData);
-      toast.success("Photo ajoutée");
+      for (const file of files) {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("caption", photoCaption);
+        await uploadWorkOrderPhoto(workOrderId, formData);
+      }
+      toast.success(files.length > 1 ? `${files.length} photos ajoutées` : "Photo ajoutée");
       setPhotoCaption("");
       form.reset();
       const wo = await api.get<WorkOrder>(`/maintenance/work-orders/${workOrderId}`);
@@ -299,8 +303,8 @@ export default function WorkOrderDetailPage() {
                 </h3>
                 <form onSubmit={handlePhotoUpload} className="flex flex-col gap-3 sm:flex-row sm:items-end">
                   <div className="flex-1 space-y-2">
-                    <Label htmlFor="photo">Ajouter une photo</Label>
-                    <Input id="photo" name="file" type="file" accept="image/*" />
+                    <Label htmlFor="photo">Ajouter des photos</Label>
+                    <Input id="photo" name="file" type="file" accept="image/*" multiple />
                   </div>
                   <div className="flex-[2] space-y-2">
                     <Label htmlFor="caption">Légende</Label>

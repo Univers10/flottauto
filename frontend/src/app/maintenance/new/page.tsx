@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Save } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,10 +29,12 @@ const statusLabels: Record<string, string> = {
 
 export default function NewWorkOrderPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedVehicleId = searchParams.get("vehicle_id") || "";
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    vehicle_id: "",
+    vehicle_id: preselectedVehicleId,
     type: "curative",
     title: "",
     description: "",
@@ -45,9 +47,21 @@ export default function NewWorkOrderPage() {
   useEffect(() => {
     api
       .get<{ items: Vehicle[] }>("/vehicles?size=100")
-      .then((res) => setVehicles(res.items))
+      .then((res) => {
+        setVehicles(res.items);
+        if (preselectedVehicleId) {
+          const preselected = res.items.find((v) => String(v.id) === preselectedVehicleId);
+          if (preselected) {
+            setForm((prev) => ({
+              ...prev,
+              vehicle_id: String(preselected.id),
+              mileage_at_creation: prev.mileage_at_creation || String(preselected.mileage ?? ""),
+            }));
+          }
+        }
+      })
       .catch(() => toast.error("Erreur de chargement des véhicules"));
-  }, []);
+  }, [preselectedVehicleId]);
 
   function update(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
