@@ -16,7 +16,10 @@ from app.crud.crud import (
     update_driver,
     delete_driver,
     create_document,
+    get_document,
     list_documents,
+    update_document,
+    delete_document,
     create_maintenance_plan,
     list_maintenance_plans,
     create_work_order,
@@ -37,6 +40,11 @@ from app.crud.crud import (
     list_toll_expenses,
     update_toll_expense,
     delete_toll_expense,
+    create_fuel_expense,
+    get_fuel_expense,
+    list_fuel_expenses,
+    update_fuel_expense,
+    delete_fuel_expense,
 )
 
 __all__ = [
@@ -57,7 +65,10 @@ __all__ = [
     "update_driver",
     "delete_driver",
     "create_document",
+    "get_document",
     "list_documents",
+    "update_document",
+    "delete_document",
     "create_maintenance_plan",
     "list_maintenance_plans",
     "create_work_order",
@@ -78,4 +89,9 @@ __all__ = [
     "list_toll_expenses",
     "update_toll_expense",
     "delete_toll_expense",
+    "create_fuel_expense",
+    "get_fuel_expense",
+    "list_fuel_expenses",
+    "update_fuel_expense",
+    "delete_fuel_expense",
 ]

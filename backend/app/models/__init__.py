@@ -17,6 +17,8 @@ from app.models.models import (
     AlertType,
     TollExpense,
     TollPaymentMethod,
+    FuelExpense,
+    FuelType,
 )
 
 __all__ = [
@@ -38,4 +40,6 @@ __all__ = [
     "AlertType",
     "TollExpense",
     "TollPaymentMethod",
+    "FuelExpense",
+    "FuelType",
 ]

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Camera, Save, X } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api } from "@/lib/api";
+import { api, uploadWorkOrderPhoto } from "@/lib/api";
 import { toast } from "sonner";
 import type { Vehicle } from "@/types";
 
@@ -28,11 +28,21 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function NewWorkOrderPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewWorkOrderPageInner />
+    </Suspense>
+  );
+}
+
+function NewWorkOrderPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedVehicleId = searchParams.get("vehicle_id") || "";
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [saving, setSaving] = useState(false);
+  const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
+  const [photoCaption, setPhotoCaption] = useState("");
   const [form, setForm] = useState({
     vehicle_id: preselectedVehicleId,
     type: "curative",
@@ -67,6 +77,24 @@ export default function NewWorkOrderPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function addPhotos(files: FileList | null) {
+    if (!files) return;
+    const added = Array.from(files).map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setPhotos((prev) => [...prev, ...added]);
+  }
+
+  function removePhoto(index: number) {
+    setPhotos((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return next;
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.vehicle_id) {
@@ -84,13 +112,29 @@ export default function NewWorkOrderPage() {
         external_garage: form.external_garage || undefined,
       };
       const created = await api.post("/maintenance/work-orders", body);
+      const createdId = (created as { id: number }).id;
       if (form.status !== "opened" || form.total_cost) {
-        await api.put(`/maintenance/work-orders/${(created as { id: number }).id}`, {
+        await api.put(`/maintenance/work-orders/${createdId}`, {
           status: form.status,
           total_cost: form.total_cost ? Number(form.total_cost) : undefined,
         });
       }
-      toast.success("Ordre de travail créé");
+      let uploadError = false;
+      for (const photo of photos) {
+        try {
+          const formData = new FormData();
+          formData.set("file", photo.file);
+          if (photoCaption) formData.set("caption", photoCaption);
+          await uploadWorkOrderPhoto(createdId, formData);
+        } catch {
+          uploadError = true;
+        }
+      }
+      if (uploadError) {
+        toast.warning("Ordre de travail créé mais certaines photos n'ont pas pu être téléversées");
+      } else {
+        toast.success("Ordre de travail créé");
+      }
       router.push("/maintenance");
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la création");
@@ -209,6 +253,57 @@ export default function NewWorkOrderPage() {
                     onChange={(e) => update("description", e.target.value)}
                   />
                 </div>
+              </div>
+              <div className="space-y-4 rounded-2xl border border-border/60 p-4">
+                <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Camera className="h-4 w-4" />
+                  Photos
+                </h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="photo">Ajouter des photos</Label>
+                    <Input
+                      id="photo"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => addPhotos(e.target.files)}
+                    />
+                  </div>
+                  <div className="flex-[2] space-y-2">
+                    <Label htmlFor="caption">Légende (appliquée à toutes les photos)</Label>
+                    <Input
+                      id="caption"
+                      value={photoCaption}
+                      onChange={(e) => setPhotoCaption(e.target.value)}
+                      placeholder="Vue moteur, pièce remplacée..."
+                    />
+                  </div>
+                </div>
+                {photos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {photos.map((photo, index) => (
+                      <div key={photo.preview} className="group relative overflow-hidden rounded-xl border border-border/60">
+                        <img
+                          src={photo.preview}
+                          alt={`Photo ${index + 1}`}
+                          className="aspect-square w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(index)}
+                          className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                    Aucune photo sélectionnée.
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <Button

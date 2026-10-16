@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { AlertItem, DashboardStats, Document, Driver, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -124,7 +124,9 @@ export const createVehicle = (body: Partial<Vehicle>) => api.post<Vehicle>("/veh
 export const updateVehicle = (id: number, body: Partial<Vehicle>) => api.put<Vehicle>(`/vehicles/${id}`, body);
 export const listVehicleDocuments = (vehicleId: number) => api.get<Document[]>(`/vehicles/${vehicleId}/documents`);
 export const createVehicleDocument = (vehicleId: number, body: Partial<Document>) => api.post<Document>(`/vehicles/${vehicleId}/documents`, body);
-export const uploadVehicleDocument = (vehicleId: number, formData: FormData) => uploadFile<Document>(`/vehicles/${vehicleId}/documents/upload`, formData);
+export const uploadVehicleDocument = (vehicleId: number, formData: FormData) => uploadFile<Document[]>(`/vehicles/${vehicleId}/documents/upload`, formData);
+export const updateVehicleDocument = (vehicleId: number, documentId: number, body: Partial<Document>) =>
+  api.put<Document>(`/vehicles/${vehicleId}/documents/${documentId}`, body);
 export const deleteVehicleDocument = (vehicleId: number, documentId: number) => api.delete(`/vehicles/${vehicleId}/documents/${documentId}`);
 export const deleteVehicle = (id: number) => api.delete(`/vehicles/${id}`);
 export const uploadVehiclePhoto = (vehicleId: number, formData: FormData) =>
@@ -137,6 +139,13 @@ export const getDriver = (id: number) => api.get<Driver>(`/drivers/${id}`);
 export const createDriver = (body: Partial<Driver>) => api.post<Driver>("/drivers", body);
 export const updateDriver = (id: number, body: Partial<Driver>) => api.put<Driver>(`/drivers/${id}`, body);
 export const deleteDriver = (id: number) => api.delete(`/drivers/${id}`);
+export const listDriverDocuments = (driverId: number) => api.get<Document[]>(`/drivers/${driverId}/documents`);
+export const uploadDriverDocument = (driverId: number, formData: FormData) =>
+  uploadFile<Document[]>(`/drivers/${driverId}/documents/upload`, formData);
+export const updateDriverDocument = (driverId: number, documentId: number, body: Partial<Document>) =>
+  api.put<Document>(`/drivers/${driverId}/documents/${documentId}`, body);
+export const deleteDriverDocument = (driverId: number, documentId: number) =>
+  api.delete(`/drivers/${driverId}/documents/${documentId}`);
 
 // Work orders
 export const listWorkOrders = () => api.get<WorkOrder[]>("/maintenance/work-orders");
@@ -148,6 +157,20 @@ export const uploadWorkOrderPhoto = (workOrderId: number, formData: FormData) =>
   uploadFile<{ id: number; file_url: string; caption: string | null }>(`/maintenance/work-orders/${workOrderId}/photos`, formData);
 export const deleteWorkOrderPhoto = (workOrderId: number, photoId: number) =>
   api.delete(`/maintenance/work-orders/${workOrderId}/photos/${photoId}`);
+
+// Fuel expenses
+export const listFuelExpenses = (params?: { vehicle_id?: number; driver_id?: number }) => {
+  const query = new URLSearchParams();
+  if (params?.vehicle_id) query.set("vehicle_id", String(params.vehicle_id));
+  if (params?.driver_id) query.set("driver_id", String(params.driver_id));
+  const qs = query.toString();
+  return api.get<FuelExpense[]>(`/fuel${qs ? `?${qs}` : ""}`);
+};
+export const createFuelExpense = (body: Partial<FuelExpense>) => api.post<FuelExpense>("/fuel", body);
+export const getFuelExpense = (id: number) => api.get<FuelExpense>(`/fuel/${id}`);
+export const updateFuelExpense = (id: number, body: Partial<FuelExpense>) =>
+  api.put<FuelExpense>(`/fuel/${id}`, body);
+export const deleteFuelExpense = (id: number) => api.delete(`/fuel/${id}`);
 
 // Alerts
 export const listAlerts = (unreadOnly = false) =>

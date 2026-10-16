@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TypeVar, Generic
 
 from sqlalchemy import func
@@ -186,6 +187,16 @@ def list_documents(db: Session, company_id: int, vehicle_id: int | None = None, 
 def delete_document(db: Session, db_obj: models.Document) -> None:
     db.delete(db_obj)
     db.commit()
+
+
+def update_document(db: Session, db_obj: models.Document, obj_in: schemas.DocumentUpdate) -> models.Document:
+    update_data = obj_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_obj, field, value)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
 
 
 # MaintenancePlan
@@ -389,5 +400,67 @@ def update_toll_expense(db: Session, db_obj: models.TollExpense, obj_in: schemas
 
 
 def delete_toll_expense(db: Session, db_obj: models.TollExpense) -> None:
+    db.delete(db_obj)
+    db.commit()
+
+
+# Fuel expense
+
+def _fuel_amount(liters: Decimal | None, price_per_liter: Decimal | None, amount: Decimal | None) -> Decimal:
+    if amount is not None:
+        return amount
+    if liters is not None and price_per_liter is not None:
+        return liters * price_per_liter
+    return Decimal("0")
+
+
+def create_fuel_expense(db: Session, obj_in: schemas.FuelExpenseCreate, company_id: int) -> models.FuelExpense:
+    data = obj_in.model_dump()
+    data["amount"] = _fuel_amount(data.get("liters"), data.get("price_per_liter"), data.get("amount"))
+    db_obj = models.FuelExpense(**data, company_id=company_id)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
+def get_fuel_expense(db: Session, fuel_id: int, company_id: int) -> models.FuelExpense | None:
+    return (
+        db.query(models.FuelExpense)
+        .filter(models.FuelExpense.id == fuel_id, models.FuelExpense.company_id == company_id)
+        .first()
+    )
+
+
+def list_fuel_expenses(
+    db: Session,
+    company_id: int,
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
+):
+    query = db.query(models.FuelExpense).filter(models.FuelExpense.company_id == company_id)
+    if vehicle_id:
+        query = query.filter(models.FuelExpense.vehicle_id == vehicle_id)
+    if driver_id:
+        query = query.filter(models.FuelExpense.driver_id == driver_id)
+    return query.order_by(models.FuelExpense.refuel_date.desc()).all()
+
+
+def update_fuel_expense(db: Session, db_obj: models.FuelExpense, obj_in: schemas.FuelExpenseUpdate) -> models.FuelExpense:
+    update_data = obj_in.model_dump(exclude_unset=True)
+    explicit_amount = update_data.pop("amount", None)
+    for field, value in update_data.items():
+        setattr(db_obj, field, value)
+    if explicit_amount is not None:
+        db_obj.amount = explicit_amount
+    elif db_obj.price_per_liter is not None:
+        db_obj.amount = db_obj.liters * db_obj.price_per_liter
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
+def delete_fuel_expense(db: Session, db_obj: models.FuelExpense) -> None:
     db.delete(db_obj)
     db.commit()

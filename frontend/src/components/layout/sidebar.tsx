@@ -12,6 +12,7 @@ import {
   Menu,
   ShieldCheck,
   Landmark,
+  Fuel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/drivers", label: "Conducteurs", icon: Users },
   { href: "/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/tolls", label: "Péages", icon: Landmark },
+  { href: "/fuel", label: "Carburant", icon: Fuel },
   { href: "/alerts", label: "Alertes", icon: Bell },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];

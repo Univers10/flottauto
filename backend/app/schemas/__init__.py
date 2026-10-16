@@ -14,6 +14,7 @@ from app.schemas.schemas import (
     DriverUpdate,
     DocumentCreate,
     DocumentRead,
+    DocumentUpdate,
     MaintenancePlanCreate,
     MaintenancePlanRead,
     WorkOrderCreate,
@@ -24,6 +25,9 @@ from app.schemas.schemas import (
     TollExpenseCreate,
     TollExpenseUpdate,
     TollExpenseRead,
+    FuelExpenseCreate,
+    FuelExpenseUpdate,
+    FuelExpenseRead,
     DashboardStats,
 )
 
@@ -43,6 +47,7 @@ __all__ = [
     "DriverUpdate",
     "DocumentCreate",
     "DocumentRead",
+    "DocumentUpdate",
     "MaintenancePlanCreate",
     "MaintenancePlanRead",
     "WorkOrderCreate",
@@ -53,5 +58,8 @@ __all__ = [
     "TollExpenseCreate",
     "TollExpenseUpdate",
     "TollExpenseRead",
+    "FuelExpenseCreate",
+    "FuelExpenseUpdate",
+    "FuelExpenseRead",
     "DashboardStats",
 ]

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DateInput } from "@/components/ui/date-input";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -127,20 +128,18 @@ export default function NewDriverPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="license_expiry">Date d&apos;expiration du permis</Label>
-                  <Input
+                  <DateInput
                     id="license_expiry"
-                    type="date"
                     value={form.license_expiry}
-                    onChange={(e) => update("license_expiry", e.target.value)}
+                    onValueChange={(value) => update("license_expiry", value)}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="medical_check_date">Date de visite médicale</Label>
-                  <Input
+                  <DateInput
                     id="medical_check_date"
-                    type="date"
                     value={form.medical_check_date}
-                    onChange={(e) => update("medical_check_date", e.target.value)}
+                    onValueChange={(value) => update("medical_check_date", value)}
                   />
                 </div>
               </div>

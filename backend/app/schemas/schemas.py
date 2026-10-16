@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod
+from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType
 
 
 # Common
@@ -187,6 +187,15 @@ class DocumentRead(BaseModel):
     created_at: datetime
 
 
+class DocumentUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=255)
+    document_type: str | None = Field(None, min_length=1, max_length=100)
+    file_url: str | None = Field(None, max_length=500)
+    issue_date: date | None = None
+    expiry_date: date | None = None
+    reminder_days: int | None = None
+
+
 # MaintenancePlan
 class MaintenancePlanCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -319,6 +328,54 @@ class TollExpenseRead(BaseModel):
     expense_date: date
     mileage: int | None
     receipt_url: str | None
+    notes: str | None
+    created_at: datetime
+
+
+# Fuel expense
+class FuelExpenseCreate(BaseModel):
+    vehicle_id: int
+    driver_id: int | None = None
+    fuel_type: FuelType = FuelType.DIESEL
+    liters: Decimal = Field(..., gt=0)
+    price_per_liter: Decimal | None = Field(None, gt=0)
+    amount: Decimal | None = Field(None, gt=0)
+    full_tank: bool = False
+    station_name: str | None = Field(None, max_length=255)
+    refuel_date: date
+    mileage: int | None = None
+    notes: str | None = None
+
+
+class FuelExpenseUpdate(BaseModel):
+    vehicle_id: int | None = None
+    driver_id: int | None = None
+    fuel_type: FuelType | None = None
+    liters: Decimal | None = Field(None, gt=0)
+    price_per_liter: Decimal | None = Field(None, gt=0)
+    amount: Decimal | None = Field(None, gt=0)
+    full_tank: bool | None = None
+    station_name: str | None = Field(None, max_length=255)
+    refuel_date: date | None = None
+    mileage: int | None = None
+    notes: str | None = None
+
+
+class FuelExpenseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_id: int
+    vehicle_id: int
+    driver_id: int | None
+    fuel_type: FuelType
+    liters: Decimal
+    price_per_liter: Decimal | None
+    amount: Decimal
+    full_tank: bool
+    station_name: str | None
+    refuel_date: date
+    mileage: int | None
     notes: str | None
     created_at: datetime
 

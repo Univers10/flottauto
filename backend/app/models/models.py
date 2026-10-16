@@ -81,6 +81,12 @@ class TollPaymentMethod(str, enum.Enum):
     OTHER = "other"
 
 
+class FuelType(str, enum.Enum):
+    DIESEL = "diesel"
+    PETROL = "petrol"
+    OTHER = "other"
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -155,6 +161,7 @@ class Vehicle(Base):
     driver = relationship("Driver", back_populates="vehicles")
     documents = relationship("Document", back_populates="vehicle", lazy="dynamic")
     work_orders = relationship("WorkOrder", back_populates="vehicle", lazy="dynamic")
+    fuel_expenses = relationship("FuelExpense", back_populates="vehicle", lazy="dynamic")
 
 
 class Driver(Base):
@@ -293,6 +300,28 @@ class TollExpense(Base):
     expense_date: Mapped[Date] = mapped_column(Date, nullable=False)
     mileage: Mapped[int | None] = mapped_column(Integer, nullable=True)
     receipt_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    vehicle = relationship("Vehicle")
+    driver = relationship("Driver")
+
+
+class FuelExpense(Base):
+    __tablename__ = "fuel_expenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    fuel_type: Mapped[FuelType] = mapped_column(Enum(FuelType), default=FuelType.DIESEL)
+    liters: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    price_per_liter: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    full_tank: Mapped[bool] = mapped_column(Boolean, default=False)
+    station_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    refuel_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    mileage: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 

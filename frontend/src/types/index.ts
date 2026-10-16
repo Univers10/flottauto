@@ -182,6 +182,25 @@ export interface TollExpense {
   created_at: string;
 }
 
+export type FuelType = "diesel" | "petrol" | "other";
+
+export interface FuelExpense {
+  id: number;
+  company_id: number;
+  vehicle_id: number;
+  driver_id: number | null;
+  fuel_type: FuelType;
+  liters: string;
+  price_per_liter: string | null;
+  amount: string;
+  full_tank: boolean;
+  station_name: string | null;
+  refuel_date: string;
+  mileage: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

@@ -7,12 +7,16 @@ import {
   ArrowLeft,
   Calendar,
   Car,
+  Droplets,
   Euro,
   FileText,
+  Fuel,
   Gauge,
   Landmark,
   Loader2,
+  Pencil,
   Plus,
+  Save,
   Trash2,
   Upload,
   User,
@@ -41,12 +45,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { api, uploadVehicleDocument, updateVehicle, listTollExpenses, createTollExpense, uploadVehiclePhoto, deleteVehiclePhoto } from "@/lib/api";
+import { api, uploadVehicleDocument, updateVehicleDocument, updateVehicle, listTollExpenses, createTollExpense, listFuelExpenses, createFuelExpense, deleteFuelExpense, uploadVehiclePhoto, deleteVehiclePhoto } from "@/lib/api";
 import { toast } from "sonner";
-import type { Document, Driver, Vehicle, WorkOrder, VehicleStatus, TollExpense, TollPaymentMethod } from "@/types";
+import type { Document, Driver, Vehicle, WorkOrder, VehicleStatus, VehicleType, EnergyType, TollExpense, TollPaymentMethod, FuelExpense, FuelType } from "@/types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1").replace("/api/v1", "");
 
 const statusBadges: Record<VehicleStatus, { bg: string; text: string; label: string }> = {
   available: { bg: "bg-emerald-50", text: "text-emerald-700", label: "Disponible" },
@@ -62,14 +67,46 @@ const typeLabels: Record<string, string> = {
   vignette: "Vignette",
   transport_authorization: "Autorisation de transport",
   license: "Permis",
+  id_card: "Pièce d'identité",
   medical: "Visite médicale",
   other: "Autre",
+};
+
+const vehicleTypeLabels: Record<VehicleType, string> = {
+  car: "Voiture",
+  van: "Utilitaire",
+  truck: "Camion",
+  bus: "Bus",
+  motorcycle: "Moto",
+  other: "Autre",
+};
+
+const energyLabels: Record<EnergyType, string> = {
+  diesel: "Diesel",
+  petrol: "Essence",
+  electric: "Électrique",
+  hybrid: "Hybride",
+  lpg: "GPL",
+  other: "Autre",
+};
+
+const statusLabels: Record<VehicleStatus, string> = {
+  available: "Disponible",
+  in_mission: "En mission",
+  in_maintenance: "En maintenance",
+  out_of_service: "Hors service",
 };
 
 const tollMethodLabels: Record<TollPaymentMethod, string> = {
   cash: "Espèces",
   card: "Carte",
   badge: "Badge / Télépéage",
+  other: "Autre",
+};
+
+const fuelLabels: Record<FuelType, string> = {
+  diesel: "Diesel",
+  petrol: "Essence",
   other: "Autre",
 };
 
@@ -83,6 +120,7 @@ export default function VehicleDetailPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [tolls, setTolls] = useState<TollExpense[]>([]);
+  const [fuelExpenses, setFuelExpenses] = useState<FuelExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -101,26 +139,90 @@ export default function VehicleDetailPage() {
     mileage: "",
     notes: "",
   });
+  const [fuelDialogOpen, setFuelDialogOpen] = useState(false);
+  const [savingFuel, setSavingFuel] = useState(false);
+  const [fuelForm, setFuelForm] = useState({
+    driver_id: "",
+    fuel_type: "diesel" as FuelType,
+    liters: "",
+    price_per_liter: "",
+    amount: "",
+    full_tank: false,
+    station_name: "",
+    refuel_date: new Date().toISOString().slice(0, 10),
+    mileage: "",
+    notes: "",
+  });
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState({
+    registration: "",
+    vin: "",
+    brand: "",
+    model: "",
+    year: "",
+    vehicle_type: "car" as VehicleType,
+    energy: "diesel" as EnergyType,
+    first_registration_date: "",
+    mileage: "",
+    status: "available" as VehicleStatus,
+    purchase_price: "",
+    notes: "",
+  });
+  const [docEditOpen, setDocEditOpen] = useState(false);
+  const [savingDocEdit, setSavingDocEdit] = useState(false);
+  const [docEditForm, setDocEditForm] = useState({
+    name: "",
+    document_type: "other",
+    issue_date: "",
+    expiry_date: "",
+    reminder_days: "30",
+  });
+  const [uploadFormKey, setUploadFormKey] = useState(0);
+
+  function applyVehicleToInfoForm(v: Vehicle) {
+    setInfoForm({
+      registration: v.registration || "",
+      vin: v.vin || "",
+      brand: v.brand || "",
+      model: v.model || "",
+      year: v.year ? String(v.year) : "",
+      vehicle_type: v.vehicle_type || "car",
+      energy: v.energy || "diesel",
+      first_registration_date: v.first_registration_date ? v.first_registration_date.slice(0, 10) : "",
+      mileage: v.mileage != null ? String(v.mileage) : "",
+      status: v.status || "available",
+      purchase_price: v.purchase_price != null ? String(v.purchase_price) : "",
+      notes: v.notes || "",
+    });
+  }
 
   async function load() {
     setLoading(true);
     try {
-      const [v, docs, orders, allDrivers, tollExpenses] = await Promise.all([
+      const [v, docs, orders, allDrivers, tollExpenses, fuelRes] = await Promise.all([
         api.get<Vehicle>(`/vehicles/${vehicleId}`),
         api.get<Document[]>(`/vehicles/${vehicleId}/documents`),
         api.get<WorkOrder[]>(`/maintenance/work-orders?vehicle_id=${vehicleId}`),
         api.get<Driver[]>("/drivers"),
         listTollExpenses({ vehicle_id: vehicleId }),
+        listFuelExpenses({ vehicle_id: vehicleId }),
       ]);
       setVehicle(v);
+      applyVehicleToInfoForm(v);
       setDocuments(docs);
       setWorkOrders(orders);
       setDrivers(allDrivers);
       setTolls(tollExpenses);
+      setFuelExpenses(fuelRes);
+      setEditingInfo(false);
       if (v.driver_id) {
         const d = allDrivers.find((x) => x.id === v.driver_id);
         setDriver(d || null);
         setSelectedDriverId(String(v.driver_id));
+      } else {
+        setDriver(null);
+        setSelectedDriverId("");
       }
     } catch (err: any) {
       toast.error(err.message || "Erreur de chargement");
@@ -133,6 +235,39 @@ export default function VehicleDetailPage() {
   useEffect(() => {
     load();
   }, [vehicleId]);
+
+  async function saveVehicleInfo() {
+    if (!vehicle) return;
+    if (!infoForm.registration.trim() || !infoForm.brand.trim() || !infoForm.model.trim()) {
+      toast.error("Immatriculation, marque et modèle sont obligatoires");
+      return;
+    }
+    setSavingInfo(true);
+    try {
+      const updated = await updateVehicle(vehicle.id, {
+        registration: infoForm.registration.trim(),
+        vin: infoForm.vin.trim() || null,
+        brand: infoForm.brand.trim(),
+        model: infoForm.model.trim(),
+        year: infoForm.year ? Number(infoForm.year) : null,
+        vehicle_type: infoForm.vehicle_type,
+        energy: infoForm.energy,
+        first_registration_date: infoForm.first_registration_date || null,
+        mileage: infoForm.mileage ? Number(infoForm.mileage) : 0,
+        status: infoForm.status,
+        purchase_price: infoForm.purchase_price ? Number(infoForm.purchase_price) : null,
+        notes: infoForm.notes.trim() || null,
+      } as Partial<Vehicle>);
+      setVehicle(updated);
+      applyVehicleToInfoForm(updated);
+      setEditingInfo(false);
+      toast.success("Véhicule mis à jour");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur de sauvegarde");
+    } finally {
+      setSavingInfo(false);
+    }
+  }
 
   async function assignDriver(driverId: string) {
     if (!vehicle) return;
@@ -148,26 +283,70 @@ export default function VehicleDetailPage() {
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const file = formData.get("file") as File;
-    if (!file || file.size === 0) {
-      toast.error("Veuillez sélectionner un fichier");
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const files = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+    if (files.length === 0) {
+      toast.error("Veuillez sélectionner au moins un fichier");
       return;
+    }
+    formData.delete("files");
+    for (const file of files) {
+      formData.append("files", file);
     }
     formData.set("document_type", docType);
     setUploading(true);
     try {
       await uploadVehicleDocument(vehicleId, formData);
-      toast.success("Document ajouté");
+      toast.success(files.length > 1 ? `${files.length} documents ajoutés` : "Document ajouté");
       setUploadOpen(false);
       setDocType("registration_card");
+      setUploadFormKey((k) => k + 1);
       const docs = await api.get<Document[]>(`/vehicles/${vehicleId}/documents`);
       setDocuments(docs);
-      e.currentTarget.reset();
     } catch (err: any) {
       toast.error(err.message || "Erreur d'upload");
     } finally {
       setUploading(false);
+    }
+  }
+
+  function openDocEdit(doc: Document) {
+    setSelectedDoc(doc);
+    setDocEditForm({
+      name: doc.name || "",
+      document_type: doc.document_type || "other",
+      issue_date: doc.issue_date ? doc.issue_date.slice(0, 10) : "",
+      expiry_date: doc.expiry_date ? doc.expiry_date.slice(0, 10) : "",
+      reminder_days: String(doc.reminder_days ?? 30),
+    });
+    setDocEditOpen(true);
+  }
+
+  async function handleDocEditSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedDoc) return;
+    if (!docEditForm.name.trim()) {
+      toast.error("Le nom du document est obligatoire");
+      return;
+    }
+    setSavingDocEdit(true);
+    try {
+      const updated = await updateVehicleDocument(vehicleId, selectedDoc.id, {
+        name: docEditForm.name.trim(),
+        document_type: docEditForm.document_type,
+        issue_date: docEditForm.issue_date || null,
+        expiry_date: docEditForm.expiry_date || null,
+        reminder_days: Number(docEditForm.reminder_days) || 30,
+      });
+      setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setSelectedDoc(updated);
+      setDocEditOpen(false);
+      toast.success("Document mis à jour");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur de mise à jour");
+    } finally {
+      setSavingDocEdit(false);
     }
   }
 
@@ -261,6 +440,68 @@ export default function VehicleDetailPage() {
     }
   }
 
+  function openFuelDialog() {
+    setFuelForm({
+      driver_id: driver ? String(driver.id) : "",
+      fuel_type: "diesel",
+      liters: "",
+      price_per_liter: "",
+      amount: "",
+      full_tank: false,
+      station_name: "",
+      refuel_date: new Date().toISOString().slice(0, 10),
+      mileage: "",
+      notes: "",
+    });
+    setFuelDialogOpen(true);
+  }
+
+  function updateFuelForm(key: keyof typeof fuelForm, value: string | boolean) {
+    setFuelForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleFuelSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fuelForm.liters) {
+      toast.error("Les litres sont requis");
+      return;
+    }
+    setSavingFuel(true);
+    try {
+      const created = await createFuelExpense({
+        vehicle_id: vehicleId,
+        driver_id: fuelForm.driver_id ? Number(fuelForm.driver_id) : null,
+        fuel_type: fuelForm.fuel_type,
+        liters: Number(fuelForm.liters) as any,
+        price_per_liter: fuelForm.price_per_liter ? Number(fuelForm.price_per_liter) : null,
+        amount: fuelForm.amount ? Number(fuelForm.amount) : null,
+        full_tank: fuelForm.full_tank,
+        station_name: fuelForm.station_name || null,
+        refuel_date: fuelForm.refuel_date,
+        mileage: fuelForm.mileage ? Number(fuelForm.mileage) : null,
+        notes: fuelForm.notes || null,
+      } as any);
+      setFuelExpenses((prev) => [created, ...prev]);
+      toast.success("Plein de carburant ajouté");
+      setFuelDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Erreur lors de l'enregistrement");
+    } finally {
+      setSavingFuel(false);
+    }
+  }
+
+  async function handleFuelDelete(id: number) {
+    if (!confirm("Supprimer ce plein de carburant ?")) return;
+    try {
+      await deleteFuelExpense(id);
+      setFuelExpenses((prev) => prev.filter((f) => f.id !== id));
+      toast.success("Plein supprimé");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur de suppression");
+    }
+  }
+
   const totalMaintenanceCost = useMemo(
     () => workOrders.reduce((sum, wo) => sum + Number(wo.total_cost || 0), 0),
     [workOrders]
@@ -269,6 +510,16 @@ export default function VehicleDetailPage() {
   const totalTollCost = useMemo(
     () => tolls.reduce((sum, t) => sum + Number(t.amount || 0), 0),
     [tolls]
+  );
+
+  const totalFuelCost = useMemo(
+    () => fuelExpenses.reduce((sum, f) => sum + Number(f.amount || 0), 0),
+    [fuelExpenses]
+  );
+
+  const totalFuelLiters = useMemo(
+    () => fuelExpenses.reduce((sum, f) => sum + Number(f.liters || 0), 0),
+    [fuelExpenses]
   );
 
   if (loading || !vehicle) {
@@ -389,6 +640,9 @@ export default function VehicleDetailPage() {
             <TabsTrigger value="tolls" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
               Péages ({tolls.length})
             </TabsTrigger>
+            <TabsTrigger value="fuel" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
+              Carburant ({fuelExpenses.length})
+            </TabsTrigger>
             <TabsTrigger value="costs" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
               Coûts
             </TabsTrigger>
@@ -396,43 +650,217 @@ export default function VehicleDetailPage() {
 
           <TabsContent value="info">
             <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
+              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-lg font-semibold">Détails du véhicule</CardTitle>
+                {!editingInfo ? (
+                  <Button variant="outline" onClick={() => setEditingInfo(true)} className="h-10 gap-2 rounded-xl px-4">
+                    <Pencil className="h-4 w-4" />
+                    Modifier
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent>
-                <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    { label: "Immatriculation", value: vehicle.registration },
-                    { label: "Marque / Modèle", value: `${vehicle.brand} ${vehicle.model}` },
-                    { label: "VIN", value: vehicle.vin || "—" },
-                    { label: "Année", value: vehicle.year || "—" },
-                    { label: "Type", value: vehicle.vehicle_type },
-                    { label: "Énergie", value: vehicle.energy },
-                    { label: "Kilométrage", value: `${vehicle.mileage.toLocaleString()} km` },
-                    {
-                      label: "Mise en circulation",
-                      value: vehicle.first_registration_date
-                        ? new Date(vehicle.first_registration_date).toLocaleDateString("fr-FR")
-                        : "—",
-                    },
-                    {
-                      label: "Prix d'achat",
-                      value: vehicle.purchase_price
-                        ? `${Number(vehicle.purchase_price).toLocaleString("fr-FR")} FCFA`
-                        : "—",
-                    },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-xl bg-muted/40 p-3">
-                      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-                      <dd className="mt-1 text-sm font-semibold capitalize">{item.value}</dd>
+                {!editingInfo ? (
+                  <>
+                    <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                      {[
+                        { label: "Immatriculation", value: vehicle.registration },
+                        { label: "Marque / Modèle", value: `${vehicle.brand} ${vehicle.model}` },
+                        { label: "VIN", value: vehicle.vin || "—" },
+                        { label: "Année", value: vehicle.year || "—" },
+                        { label: "Type", value: vehicleTypeLabels[vehicle.vehicle_type] || vehicle.vehicle_type },
+                        { label: "Énergie", value: energyLabels[vehicle.energy] || vehicle.energy },
+                        { label: "Statut", value: statusLabels[vehicle.status] || vehicle.status },
+                        { label: "Kilométrage", value: `${vehicle.mileage.toLocaleString()} km` },
+                        {
+                          label: "Mise en circulation",
+                          value: vehicle.first_registration_date
+                            ? new Date(vehicle.first_registration_date).toLocaleDateString("fr-FR")
+                            : "—",
+                        },
+                        {
+                          label: "Prix d'achat",
+                          value: vehicle.purchase_price
+                            ? `${Number(vehicle.purchase_price).toLocaleString("fr-FR")} FCFA`
+                            : "—",
+                        },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-xl bg-muted/40 p-3">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
+                          <dd className="mt-1 text-sm font-semibold capitalize">{item.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {vehicle.notes && (
+                      <div className="mt-6 rounded-xl bg-muted/40 p-4">
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</dt>
+                        <dd className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{vehicle.notes}</dd>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveVehicleInfo();
+                    }}
+                    className="space-y-5"
+                  >
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="v-registration">Immatriculation *</Label>
+                        <Input
+                          id="v-registration"
+                          required
+                          value={infoForm.registration}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, registration: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-vin">VIN</Label>
+                        <Input id="v-vin" value={infoForm.vin} onChange={(e) => setInfoForm((p) => ({ ...p, vin: e.target.value }))} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-brand">Marque *</Label>
+                        <Input
+                          id="v-brand"
+                          required
+                          value={infoForm.brand}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, brand: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-model">Modèle *</Label>
+                        <Input
+                          id="v-model"
+                          required
+                          value={infoForm.model}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, model: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-year">Année</Label>
+                        <Input
+                          id="v-year"
+                          type="number"
+                          value={infoForm.year}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, year: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-type">Type</Label>
+                        <Select
+                          value={infoForm.vehicle_type}
+                          onValueChange={(v) => setInfoForm((p) => ({ ...p, vehicle_type: (v || "car") as VehicleType }))}
+                        >
+                          <SelectTrigger id="v-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(vehicleTypeLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-energy">Énergie</Label>
+                        <Select
+                          value={infoForm.energy}
+                          onValueChange={(v) => setInfoForm((p) => ({ ...p, energy: (v || "diesel") as EnergyType }))}
+                        >
+                          <SelectTrigger id="v-energy">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(energyLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-status">Statut</Label>
+                        <Select
+                          value={infoForm.status}
+                          onValueChange={(v) => setInfoForm((p) => ({ ...p, status: (v || "available") as VehicleStatus }))}
+                        >
+                          <SelectTrigger id="v-status">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(statusLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-mileage">Kilométrage</Label>
+                        <Input
+                          id="v-mileage"
+                          type="number"
+                          value={infoForm.mileage}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, mileage: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-first-reg">Mise en circulation</Label>
+                        <Input
+                          id="v-first-reg"
+                          type="date"
+                          value={infoForm.first_registration_date}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, first_registration_date: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="v-price">Prix d&apos;achat (FCFA)</Label>
+                        <Input
+                          id="v-price"
+                          type="number"
+                          value={infoForm.purchase_price}
+                          onChange={(e) => setInfoForm((p) => ({ ...p, purchase_price: e.target.value }))}
+                        />
+                      </div>
                     </div>
-                  ))}
-                </dl>
-                {vehicle.notes && (
-                  <div className="mt-6 rounded-xl bg-muted/40 p-4">
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</dt>
-                    <dd className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{vehicle.notes}</dd>
-                  </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="v-notes">Notes</Label>
+                      <textarea
+                        id="v-notes"
+                        value={infoForm.notes}
+                        onChange={(e) => setInfoForm((p) => ({ ...p, notes: e.target.value }))}
+                        rows={4}
+                        className="w-full rounded-xl border border-border/60 bg-muted/50 px-3.5 py-2 text-base outline-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          applyVehicleToInfoForm(vehicle);
+                          setEditingInfo(false);
+                        }}
+                        className="h-11 rounded-xl border-border/60 px-5"
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={savingInfo}
+                        className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25"
+                      >
+                        <Save className="h-4 w-4" />
+                        {savingInfo ? "Sauvegarde..." : "Enregistrer"}
+                      </Button>
+                    </div>
+                  </form>
                 )}
               </CardContent>
             </Card>
@@ -458,10 +886,10 @@ export default function VehicleDetailPage() {
                     <DialogHeader>
                       <DialogTitle className="text-lg font-semibold">Nouveau document</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={handleUpload} className="space-y-4 pt-2">
+                    <form key={uploadFormKey} onSubmit={handleUpload} className="space-y-4 pt-2">
                       <div className="space-y-2">
                         <Label htmlFor="docName">Nom</Label>
-                        <Input id="docName" name="name" required placeholder="Carte grise 2026" />
+                        <Input id="docName" name="name" placeholder="Carte grise 2026 (optionnel si plusieurs fichiers)" />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="docType">Type</Label>
@@ -489,8 +917,9 @@ export default function VehicleDetailPage() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="file">Fichier</Label>
-                        <Input id="file" name="file" type="file" required />
+                        <Label htmlFor="files">Fichiers</Label>
+                        <Input id="files" name="files" type="file" multiple required />
+                        <p className="text-xs text-muted-foreground">Vous pouvez sélectionner plusieurs documents en même temps.</p>
                       </div>
                       <div className="flex justify-end gap-3 pt-2">
                         <Button type="button" variant="outline" onClick={() => setUploadOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
@@ -498,6 +927,82 @@ export default function VehicleDetailPage() {
                         </Button>
                         <Button type="submit" disabled={uploading} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
                           {uploading ? "Envoi..." : "Enregistrer"}
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={docEditOpen} onOpenChange={setDocEditOpen}>
+                  <DialogContent className="rounded-2xl border-none p-6 sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg font-semibold">Modifier le document</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleDocEditSubmit} className="space-y-4 pt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-doc-name">Nom</Label>
+                        <Input
+                          id="edit-doc-name"
+                          required
+                          value={docEditForm.name}
+                          onChange={(e) => setDocEditForm((p) => ({ ...p, name: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-doc-type">Type</Label>
+                        <Select
+                          value={docEditForm.document_type}
+                          onValueChange={(v) => setDocEditForm((p) => ({ ...p, document_type: v || "other" }))}
+                        >
+                          <SelectTrigger id="edit-doc-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(typeLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-doc-issue">Date d&apos;émission</Label>
+                          <Input
+                            id="edit-doc-issue"
+                            type="date"
+                            value={docEditForm.issue_date}
+                            onChange={(e) => setDocEditForm((p) => ({ ...p, issue_date: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-doc-expiry">Date d&apos;expiration</Label>
+                          <Input
+                            id="edit-doc-expiry"
+                            type="date"
+                            value={docEditForm.expiry_date}
+                            onChange={(e) => setDocEditForm((p) => ({ ...p, expiry_date: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-doc-reminder">Rappel (jours avant)</Label>
+                        <Input
+                          id="edit-doc-reminder"
+                          type="number"
+                          min={0}
+                          value={docEditForm.reminder_days}
+                          onChange={(e) => setDocEditForm((p) => ({ ...p, reminder_days: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-3 pt-2">
+                        <Button type="button" variant="outline" onClick={() => setDocEditOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
+                          Annuler
+                        </Button>
+                        <Button type="submit" disabled={savingDocEdit} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
+                          <Save className="h-4 w-4" />
+                          {savingDocEdit ? "Sauvegarde..." : "Enregistrer"}
                         </Button>
                       </div>
                     </form>
@@ -602,6 +1107,10 @@ export default function VehicleDetailPage() {
                               <div className="flex flex-wrap justify-end gap-3 pt-2">
                                 <Button variant="outline" onClick={() => setSelectedDoc(null)} className="h-11 rounded-xl px-5">
                                   Fermer
+                                </Button>
+                                <Button variant="outline" onClick={() => openDocEdit(selectedDoc)} className="h-11 gap-2 rounded-xl px-5">
+                                  <Pencil className="h-4 w-4" />
+                                  Modifier
                                 </Button>
                                 <Button variant="destructive" onClick={() => { deleteDoc(selectedDoc); setSelectedDoc(null); }} className="h-11 gap-2 rounded-xl px-5">
                                   <Trash2 className="h-4 w-4" />
@@ -895,12 +1404,225 @@ export default function VehicleDetailPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="fuel">
+            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
+              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                  <Fuel className="h-5 w-5 text-primary" />
+                  Pleins de carburant
+                </CardTitle>
+                <Dialog open={fuelDialogOpen} onOpenChange={setFuelDialogOpen}>
+                  <DialogTrigger
+                    render={
+                      <Button onClick={openFuelDialog} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
+                        <Plus className="h-4 w-4" />
+                        Nouveau plein
+                      </Button>
+                    }
+                  />
+                  <DialogContent className="max-w-md sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Nouveau plein de carburant</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleFuelSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label>Véhicule</Label>
+                          <Input value={`${vehicle.registration} — ${vehicle.brand} ${vehicle.model}`} disabled className="bg-muted/40" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Conducteur</Label>
+                          <Select value={fuelForm.driver_id} onValueChange={(v) => updateFuelForm("driver_id", v || "")}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Aucun" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Aucun</SelectItem>
+                              {drivers.map((d) => (
+                                <SelectItem key={d.id} value={String(d.id)}>
+                                  {d.first_name} {d.last_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Type de carburant</Label>
+                          <Select value={fuelForm.fuel_type} onValueChange={(v) => { if (v) updateFuelForm("fuel_type", v); }}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(fuelLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="liters">Litres *</Label>
+                          <Input
+                            id="liters"
+                            type="number"
+                            step="0.01"
+                            required
+                            value={fuelForm.liters}
+                            onChange={(e) => updateFuelForm("liters", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="price_per_liter">Prix / litre (FCFA)</Label>
+                          <Input
+                            id="price_per_liter"
+                            type="number"
+                            step="0.01"
+                            value={fuelForm.price_per_liter}
+                            onChange={(e) => updateFuelForm("price_per_liter", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="amount">Montant total (FCFA)</Label>
+                          <Input
+                            id="amount"
+                            type="number"
+                            step="0.01"
+                            placeholder="Calculé si vide"
+                            value={fuelForm.amount}
+                            onChange={(e) => updateFuelForm("amount", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="refuel_date">Date *</Label>
+                          <Input
+                            id="refuel_date"
+                            type="date"
+                            required
+                            value={fuelForm.refuel_date}
+                            onChange={(e) => updateFuelForm("refuel_date", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="station_name">Station</Label>
+                          <Input
+                            id="station_name"
+                            value={fuelForm.station_name}
+                            onChange={(e) => updateFuelForm("station_name", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mileage">Kilométrage</Label>
+                          <Input
+                            id="mileage"
+                            type="number"
+                            value={fuelForm.mileage}
+                            onChange={(e) => updateFuelForm("mileage", e.target.value)}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 pt-6">
+                          <Switch
+                            id="full_tank"
+                            checked={fuelForm.full_tank}
+                            onCheckedChange={(checked) => updateFuelForm("full_tank", Boolean(checked))}
+                          />
+                          <Label htmlFor="full_tank" className="cursor-pointer font-normal">
+                            Plein complet
+                          </Label>
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="notes">Notes</Label>
+                          <Input
+                            id="notes"
+                            value={fuelForm.notes}
+                            onChange={(e) => updateFuelForm("notes", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setFuelDialogOpen(false)} className="rounded-xl">
+                          Annuler
+                        </Button>
+                        <Button type="submit" disabled={savingFuel} className="gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 shadow-lg shadow-primary/25">
+                          {savingFuel ? "Enregistrement..." : "Enregistrer"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {fuelExpenses.length === 0 ? (
+                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                    Aucun plein de carburant enregistré.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-muted-foreground">
+                          <th className="pb-3 font-medium">Date</th>
+                          <th className="pb-3 font-medium">Station</th>
+                          <th className="pb-3 font-medium">Carburant</th>
+                          <th className="pb-3 font-medium text-right">Litres</th>
+                          <th className="pb-3 font-medium text-right">Montant</th>
+                          <th className="pb-3 font-medium text-right"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fuelExpenses.map((refuel) => (
+                          <tr key={refuel.id} className="border-b last:border-0 transition-colors hover:bg-muted/40">
+                            <td className="py-4 text-muted-foreground">
+                              {new Date(refuel.refuel_date).toLocaleDateString("fr-FR")}
+                            </td>
+                            <td className="py-4">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">{refuel.station_name || "—"}</span>
+                                {refuel.full_tank && (
+                                  <Badge className="rounded-lg border-0 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                                    Plein
+                                  </Badge>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-4 capitalize text-muted-foreground">{fuelLabels[refuel.fuel_type]}</td>
+                            <td className="py-4 text-right font-medium">{Number(refuel.liters).toLocaleString("fr-FR")} L</td>
+                            <td className="py-4 text-right font-semibold">
+                              {Number(refuel.amount).toLocaleString("fr-FR")} FCFA
+                            </td>
+                            <td className="py-4 text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleFuelDelete(refuel.id)}
+                                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="costs">
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
                 <CardContent className="pt-6">
                   <p className="text-sm text-muted-foreground">Coût total maintenance</p>
                   <p className="mt-1 text-2xl font-bold">{totalMaintenanceCost.toLocaleString("fr-FR")} FCFA</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
+                <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Coût total carburant</p>
+                  <p className="mt-1 text-2xl font-bold">{totalFuelCost.toLocaleString("fr-FR")} FCFA</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{totalFuelLiters.toLocaleString("fr-FR")} L au total</p>
                 </CardContent>
               </Card>
               <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
@@ -920,6 +1642,14 @@ export default function VehicleDetailPage() {
                   <p className="text-sm text-muted-foreground">Coût moyen / intervention</p>
                   <p className="mt-1 text-2xl font-bold">
                     {workOrders.length ? Math.round(totalMaintenanceCost / workOrders.length).toLocaleString("fr-FR") : 0} FCFA
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
+                <CardContent className="pt-6">
+                  <p className="text-sm text-muted-foreground">Coût total véhicule</p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {(totalMaintenanceCost + totalTollCost + totalFuelCost).toLocaleString("fr-FR")} FCFA
                   </p>
                 </CardContent>
               </Card>
