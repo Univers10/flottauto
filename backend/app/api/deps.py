@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -35,6 +35,18 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
 def require_role(*roles: models.Role) -> callable:
     def checker(current_user: models.User = Depends(get_current_user)) -> models.User:
         if current_user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        return current_user
+    return checker
+
+
+def deny_roles(*roles: models.Role, allow_read: bool = False) -> callable:
+    """Bloque les rôles donnés sur un router. Avec allow_read, les GET restent autorisés."""
+    def checker(request: Request, current_user: models.User = Depends(get_current_user)) -> models.User:
+        if current_user.role in roles and not (allow_read and request.method == "GET"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useCurrentUser } from "@/components/layout/app-shell";
+import { canDeleteWorkOrders } from "@/lib/roles";
 import { api, deleteWorkOrder, deleteWorkOrderPhoto, getVehicle, updateWorkOrder, uploadWorkOrderPhoto } from "@/lib/api";
 import { toast } from "sonner";
 import type { Vehicle, WorkOrder } from "@/types";
@@ -40,6 +42,17 @@ const typeLabels: Record<string, string> = {
 };
 
 const statusFlow = ["opened", "diagnosed", "in_progress", "done", "validated"];
+
+// Rendu sous AppShell pour accéder à l'utilisateur connecté.
+function DeleteWorkOrderButton({ onClick }: { onClick: () => void }) {
+  const currentUser = useCurrentUser();
+  if (!currentUser || !canDeleteWorkOrders(currentUser.role)) return null;
+  return (
+    <Button variant="outline" size="icon" onClick={onClick} className="rounded-xl border-border/60 text-muted-foreground hover:text-destructive">
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  );
+}
 
 export default function WorkOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -198,9 +211,7 @@ export default function WorkOrderDetailPage() {
             <Badge className={cn("rounded-lg border-0 px-3 py-1 font-medium", statusBadge.bg, statusBadge.text)}>
               {statusBadge.label}
             </Badge>
-            <Button variant="outline" size="icon" onClick={remove} className="rounded-xl border-border/60 text-muted-foreground hover:text-destructive">
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <DeleteWorkOrderButton onClick={remove} />
           </div>
         </div>
 
@@ -409,6 +420,14 @@ export default function WorkOrderDetailPage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Création</span>
                   <span className="font-medium">{new Date(workOrder.created_at).toLocaleDateString("fr-FR")}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Saisi par</span>
+                  <span className="font-medium">
+                    {workOrder.created_by
+                      ? `${workOrder.created_by.first_name ?? ""} ${workOrder.created_by.last_name ?? ""}`.trim() || workOrder.created_by.email
+                      : "—"}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Début</span>

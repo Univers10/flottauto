@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { canAccess } from "@/lib/roles";
+import type { Role } from "@/types";
 
 const navItems = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
@@ -50,7 +52,7 @@ function NavLink({ item }: { item: (typeof navItems)[number] }) {
   );
 }
 
-export function Sidebar({ className }: { className?: string }) {
+export function Sidebar({ role, className }: { role: Role; className?: string }) {
   return (
     <div className={cn("flex h-full flex-col border-r border-sidebar-border bg-sidebar p-4", className)}>
       <div className="mb-8 flex items-center gap-3 px-2">
@@ -63,7 +65,7 @@ export function Sidebar({ className }: { className?: string }) {
         </div>
       </div>
       <nav className="flex flex-1 flex-col gap-1">
-        {navItems.map((item) => (
+        {navItems.filter((item) => canAccess(role, item.href)).map((item) => (
           <NavLink key={item.href} item={item} />
         ))}
       </nav>
@@ -78,7 +80,7 @@ export function Sidebar({ className }: { className?: string }) {
   );
 }
 
-export function MobileSidebar() {
+export function MobileSidebar({ role }: { role: Role }) {
   return (
     <Sheet>
       <SheetTrigger>
@@ -88,7 +90,7 @@ export function MobileSidebar() {
         </div>
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
-        <Sidebar className="border-0" />
+        <Sidebar role={role} className="border-0" />
       </SheetContent>
     </Sheet>
   );

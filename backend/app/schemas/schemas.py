@@ -47,6 +47,23 @@ class UserCreate(UserBase):
     role: Role = Role.ADMIN
 
 
+class UserUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    role: Role | None = None
+    is_active: bool | None = None
+    password: str | None = Field(None, min_length=8)
+
+
+class UserSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    first_name: str | None
+    last_name: str | None
+
+
 class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -270,6 +287,8 @@ class WorkOrderRead(BaseModel):
     remaining_due: Decimal | None
     not_covered: Decimal | None
     external_garage: str | None
+    created_by_id: int | None = None
+    created_by: UserSummary | None = None
     created_at: datetime
     updated_at: datetime
     photos: list[WorkOrderPhotoRead] = []

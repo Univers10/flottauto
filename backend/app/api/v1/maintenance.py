@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
@@ -47,7 +47,7 @@ def create_work_order(
     vehicle = crud.get_vehicle(db, payload.vehicle_id, company_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    return crud.create_work_order(db, payload, company_id=company_id)
+    return crud.create_work_order(db, payload, company_id=company_id, created_by_id=current_user.id)
 
 
 @router.get("/work-orders", response_model=list[schemas.WorkOrderRead])
@@ -89,7 +89,9 @@ def update_work_order(
 def delete_work_order(
     work_order_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(
+        require_role(models.Role.SUPER_ADMIN, models.Role.ADMIN, models.Role.MANAGER)
+    ),
 ):
     wo = crud.get_work_order(db, work_order_id, _company_id(current_user))
     if not wo:

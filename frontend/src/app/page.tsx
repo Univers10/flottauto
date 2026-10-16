@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { login, setToken } from "@/lib/api";
+import { getMe, login, setToken } from "@/lib/api";
+import { homePathFor } from "@/lib/roles";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -22,7 +23,8 @@ export default function LoginPage() {
     try {
       const data = await login(email, password);
       setToken(data.access_token);
-      router.push("/dashboard");
+      const me = await getMe();
+      router.push(homePathFor(me.role));
       router.refresh();
     } catch (err: any) {
       toast.error(err.message || "Erreur de connexion");

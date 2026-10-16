@@ -16,7 +16,7 @@ import {
 import { removeToken, listAlerts, markAlertRead, refreshAlerts } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import type { AlertItem } from "@/types";
+import type { AlertItem, Role } from "@/types";
 import { toast } from "sonner";
 
 const severityConfig: Record<string, { icon: React.ElementType; color: string }> = {
@@ -25,13 +25,14 @@ const severityConfig: Record<string, { icon: React.ElementType; color: string }>
   info: { icon: Check, color: "bg-blue-50 text-blue-700" },
 };
 
-export function Topbar({ user }: { user?: { first_name?: string | null; last_name?: string | null; email: string } }) {
+export function Topbar({ user }: { user?: { first_name?: string | null; last_name?: string | null; email: string; role?: Role } }) {
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   async function loadAlerts() {
     try {
-      await refreshAlerts();
+      // La régénération des alertes passe par le dashboard, inaccessible aux maintenanciers.
+      if (user?.role !== "mechanic") await refreshAlerts();
       const res = await listAlerts(true);
       setAlerts(res);
     } catch {

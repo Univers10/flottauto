@@ -133,6 +133,8 @@ export interface WorkOrder {
   mileage_at_creation: number | null;
   total_cost: string | null;
   external_garage: string | null;
+  created_by_id: number | null;
+  created_by: Pick<User, "id" | "email" | "first_name" | "last_name"> | null;
   created_at: string;
   updated_at: string;
   photos?: WorkOrderPhoto[];

@@ -53,14 +53,27 @@ def get_user(db: Session, user_id: int) -> models.User | None:
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
-def list_users_by_company(db: Session, company_id: int, skip: int = 0, limit: int = 100):
-    return (
-        db.query(models.User)
-        .filter(models.User.company_id == company_id)
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+def list_users_by_company(
+    db: Session, company_id: int, role: models.Role | None = None, skip: int = 0, limit: int = 100
+):
+    query = db.query(models.User).filter(models.User.company_id == company_id)
+    if role:
+        query = query.filter(models.User.role == role)
+    return query.order_by(models.User.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def update_user(db: Session, db_obj: models.User, obj_in: schemas.UserUpdate) -> models.User:
+    update_data = obj_in.model_dump(exclude_unset=True)
+    password = update_data.pop("password", None)
+    if password:
+        db_obj.hashed_password = get_password_hash(password)
+    for field, value in update_data.items():
+        if value is not None or field in ("first_name", "last_name"):
+            setattr(db_obj, field, value)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
 
 
 # Vehicle
@@ -220,9 +233,11 @@ def list_maintenance_plans(db: Session, company_id: int):
 
 # WorkOrder
 
-def create_work_order(db: Session, obj_in: schemas.WorkOrderCreate, company_id: int) -> models.WorkOrder:
+def create_work_order(
+    db: Session, obj_in: schemas.WorkOrderCreate, company_id: int, created_by_id: int | None = None
+) -> models.WorkOrder:
     data = obj_in.model_dump()
-    db_obj = models.WorkOrder(**data, company_id=company_id)
+    db_obj = models.WorkOrder(**data, company_id=company_id, created_by_id=created_by_id)
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)

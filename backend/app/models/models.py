@@ -256,6 +256,7 @@ class WorkOrder(Base):
     remaining_due: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     not_covered: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     external_garage: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -264,7 +265,8 @@ class WorkOrder(Base):
     )
 
     vehicle = relationship("Vehicle", back_populates="work_orders")
-    photos = relationship("WorkOrderPhoto", back_populates="work_order")
+    created_by = relationship("User")
+    photos = relationship("WorkOrderPhoto", back_populates="work_order", cascade="all, delete-orphan")
 
 
 class Alert(Base):
