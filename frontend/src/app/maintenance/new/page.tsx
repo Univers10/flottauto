@@ -1,31 +1,23 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Camera, Save, X } from "lucide-react";
+import { ImagePlus, Save, X } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Field, FormSection, PageHeader, Panel } from "@/components/app/primitives";
 import { api, uploadWorkOrderPhoto } from "@/lib/api";
+import { workOrderStatus, workOrderType } from "@/lib/labels";
 import { toast } from "sonner";
-import type { Vehicle } from "@/types";
+import type { Vehicle, WorkOrder } from "@/types";
 
-const statusLabels: Record<string, string> = {
-  opened: "Ouvert",
-  diagnosed: "Diagnostiqué",
-  in_progress: "En cours",
-  done: "Terminé",
-  validated: "Validé",
-};
+const statusItems: Record<string, string> = Object.fromEntries(
+  (Object.keys(workOrderStatus) as WorkOrder["status"][]).map((s) => [s, workOrderStatus[s].label])
+);
 
 export default function NewWorkOrderPage() {
   return (
@@ -143,188 +135,167 @@ function NewWorkOrderPageInner() {
     }
   }
 
+  const vehicleItems: Record<string, string> = Object.fromEntries(
+    vehicles.map((v) => [String(v.id), `${v.registration} — ${v.brand} ${v.model}`])
+  );
+
   return (
     <AppShell>
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push("/maintenance")}
-            className="rounded-xl"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Nouvel ordre de travail</h1>
-            <p className="text-sm text-muted-foreground">Planifiez une intervention sur un véhicule</p>
-          </div>
-        </div>
+      <div className="mx-auto max-w-5xl">
+        <PageHeader
+          title="Nouvel ordre de travail"
+          description="Planifiez une intervention sur un véhicule de la flotte."
+          breadcrumb={[{ label: "Maintenance", href: "/maintenance" }, { label: "Nouvel ordre" }]}
+        />
 
         <form onSubmit={handleSubmit}>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Détails de l&apos;intervention</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="vehicle">Véhicule *</Label>
-                  <Select value={form.vehicle_id} onValueChange={(v) => { if (v) update("vehicle_id", v); }}>
+          <Panel>
+            <div className="divide-y">
+              <FormSection title="Intervention" description="Véhicule concerné, nature et intitulé de l'intervention.">
+                <Field label="Véhicule" htmlFor="vehicle" required>
+                  <Select items={vehicleItems} value={form.vehicle_id} onValueChange={(v) => { if (v) update("vehicle_id", v); }}>
                     <SelectTrigger id="vehicle">
                       <SelectValue placeholder="Sélectionner un véhicule" />
                     </SelectTrigger>
                     <SelectContent>
                       {vehicles.map((v) => (
                         <SelectItem key={v.id} value={String(v.id)}>
-                          {v.registration} — {v.brand} {v.model}
+                          <span className="font-mono text-xs font-semibold tracking-wider uppercase">{v.registration}</span>
+                          <span className="text-muted-foreground">
+                            {v.brand} {v.model}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={form.type} onValueChange={(v) => { if (v) update("type", v); }}>
-                    <SelectTrigger>
+                </Field>
+                <Field label="Type" htmlFor="type">
+                  <Select items={workOrderType} value={form.type} onValueChange={(v) => { if (v) update("type", v); }}>
+                    <SelectTrigger id="type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="curative">Curatif</SelectItem>
-                      <SelectItem value="preventive">Préventif</SelectItem>
+                      <SelectItem value="curative">{workOrderType.curative}</SelectItem>
+                      <SelectItem value="preventive">{workOrderType.preventive}</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="title">Titre *</Label>
+                </Field>
+                <Field label="Titre" htmlFor="title" required className="sm:col-span-2">
                   <Input
                     id="title"
                     required
                     value={form.title}
                     onChange={(e) => update("title", e.target.value)}
+                    placeholder="Vidange, remplacement plaquettes…"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="status">Statut</Label>
-                  <Select value={form.status} onValueChange={(v) => { if (v) update("status", v); }}>
+                </Field>
+                <Field label="Description" htmlFor="description" className="sm:col-span-2">
+                  <Textarea
+                    id="description"
+                    rows={3}
+                    value={form.description}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => update("description", e.target.value)}
+                    placeholder="Symptômes constatés, travaux prévus…"
+                  />
+                </Field>
+              </FormSection>
+
+              <FormSection title="Suivi" description="État d'avancement, prestataire et éléments chiffrés.">
+                <Field label="Statut" htmlFor="status">
+                  <Select items={statusItems} value={form.status} onValueChange={(v) => { if (v) update("status", v); }}>
                     <SelectTrigger id="status">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.entries(statusLabels).map(([value, label]) => (
+                      {Object.entries(statusItems).map(([value, label]) => (
                         <SelectItem key={value} value={value}>
                           {label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mileage">Kilométrage lors de l&apos;ouverture</Label>
-                  <Input
-                    id="mileage"
-                    type="number"
-                    value={form.mileage_at_creation}
-                    onChange={(e) => update("mileage_at_creation", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="total_cost">Coût total (FCFA)</Label>
-                  <Input
-                    id="total_cost"
-                    type="number"
-                    value={form.total_cost}
-                    onChange={(e) => update("total_cost", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="external_garage">Garage externe</Label>
+                </Field>
+                <Field label="Garage externe" htmlFor="external_garage">
                   <Input
                     id="external_garage"
                     value={form.external_garage}
                     onChange={(e) => update("external_garage", e.target.value)}
+                    placeholder="Nom du garage ou technicien"
                   />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="description">Description</Label>
+                </Field>
+                <Field label="Kilométrage à l'ouverture" htmlFor="mileage" hint="Prérempli avec le kilométrage du véhicule.">
                   <Input
-                    id="description"
-                    value={form.description}
-                    onChange={(e) => update("description", e.target.value)}
+                    id="mileage"
+                    type="number"
+                    className="tabular"
+                    value={form.mileage_at_creation}
+                    onChange={(e) => update("mileage_at_creation", e.target.value)}
                   />
+                </Field>
+                <Field label="Coût total (FCFA)" htmlFor="total_cost">
+                  <Input
+                    id="total_cost"
+                    type="number"
+                    className="tabular"
+                    value={form.total_cost}
+                    onChange={(e) => update("total_cost", e.target.value)}
+                    placeholder="0"
+                  />
+                </Field>
+              </FormSection>
+
+              <FormSection title="Photos" description="Photos du véhicule ou des pièces, téléversées après la création.">
+                <Field label="Ajouter des photos" htmlFor="photo">
+                  <Input id="photo" type="file" accept="image/*" multiple onChange={(e) => addPhotos(e.target.files)} />
+                </Field>
+                <Field label="Légende" htmlFor="caption" hint="Appliquée à toutes les photos.">
+                  <Input
+                    id="caption"
+                    value={photoCaption}
+                    onChange={(e) => setPhotoCaption(e.target.value)}
+                    placeholder="Vue moteur, pièce remplacée…"
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  {photos.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                      {photos.map((photo, index) => (
+                        <div key={photo.preview} className="group relative overflow-hidden rounded-lg border bg-surface-sunken">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={photo.preview} alt={`Photo ${index + 1}`} className="aspect-square w-full object-cover" />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            onClick={() => removePhoto(index)}
+                            className="absolute top-1.5 right-1.5 bg-card"
+                            aria-label="Retirer la photo"
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-dashed bg-surface-sunken text-sm text-muted-foreground">
+                      <ImagePlus className="size-4 text-subtle-foreground" />
+                      Aucune photo sélectionnée
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="space-y-4 rounded-2xl border border-border/60 p-4">
-                <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Camera className="h-4 w-4" />
-                  Photos
-                </h3>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <div className="flex-1 space-y-2">
-                    <Label htmlFor="photo">Ajouter des photos</Label>
-                    <Input
-                      id="photo"
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(e) => addPhotos(e.target.files)}
-                    />
-                  </div>
-                  <div className="flex-[2] space-y-2">
-                    <Label htmlFor="caption">Légende (appliquée à toutes les photos)</Label>
-                    <Input
-                      id="caption"
-                      value={photoCaption}
-                      onChange={(e) => setPhotoCaption(e.target.value)}
-                      placeholder="Vue moteur, pièce remplacée..."
-                    />
-                  </div>
-                </div>
-                {photos.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {photos.map((photo, index) => (
-                      <div key={photo.preview} className="group relative overflow-hidden rounded-xl border border-border/60">
-                        <img
-                          src={photo.preview}
-                          alt={`Photo ${index + 1}`}
-                          className="aspect-square w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePhoto(index)}
-                          className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucune photo sélectionnée.
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => router.push("/maintenance")}
-                  className="h-11 rounded-xl border-border/60 px-5"
-                >
-                  Annuler
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25"
-                >
-                  <Save className="h-4 w-4" />
-                  {saving ? "Enregistrement..." : "Enregistrer"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </FormSection>
+            </div>
+
+            <div className="-mx-5 mt-6 -mb-5 flex justify-end gap-2 border-t bg-surface-sunken px-5 py-4">
+              <Link href="/maintenance" className={buttonVariants({ variant: "outline" })}>
+                Annuler
+              </Link>
+              <Button type="submit" disabled={saving}>
+                <Save className="size-4" />
+                {saving ? "Enregistrement…" : "Créer l'ordre"}
+              </Button>
+            </div>
+          </Panel>
         </form>
       </div>
     </AppShell>

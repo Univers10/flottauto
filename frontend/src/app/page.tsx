@@ -2,14 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Loader2, ArrowRight } from "lucide-react";
+import { ArrowRight, BellRing, Gauge, Loader2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field } from "@/components/app/primitives";
 import { getMe, login, setToken } from "@/lib/api";
 import { homePathFor } from "@/lib/roles";
 import { toast } from "sonner";
+
+const highlights = [
+  { icon: Gauge, title: "Toute la flotte d'un coup d'œil", text: "Disponibilité, coûts et échéances de chaque véhicule." },
+  { icon: Wrench, title: "Maintenance tracée", text: "Interventions, photos et coûts saisis par vos maintenanciers." },
+  { icon: BellRing, title: "Alertes avant l'échéance", text: "Assurances, visites techniques et permis surveillés pour vous." },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,70 +32,120 @@ export default function LoginPage() {
       router.push(homePathFor(me.role));
       router.refresh();
     } catch (err: any) {
-      toast.error(err.message || "Erreur de connexion");
+      toast.error(err.message === "Incorrect email or password" ? "Email ou mot de passe incorrect" : err.message || "Erreur de connexion");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-blue-50" />
-      <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
-      <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-blue-300/20 blur-3xl" />
+    <div className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
+      {/* Panneau de marque */}
+      <div className="relative hidden overflow-hidden bg-sidebar text-sidebar-foreground lg:flex lg:flex-col lg:justify-between lg:p-12">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, var(--sidebar-border) 1px, transparent 1px), linear-gradient(to bottom, var(--sidebar-border) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+            maskImage: "radial-gradient(ellipse at 30% 40%, black 20%, transparent 75%)",
+          }}
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -top-40 -right-32 size-[520px] rounded-full opacity-40 blur-3xl"
+          style={{ background: "radial-gradient(circle, var(--sidebar-primary), transparent 65%)" }}
+          aria-hidden
+        />
 
-      <Card className="relative z-10 w-full max-w-md rounded-3xl border-none bg-card/90 p-2 shadow-2xl shadow-primary/10 backdrop-blur-xl">
-        <CardHeader className="space-y-5 pb-6 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-blue-600 shadow-lg shadow-primary/25">
-            <ShieldCheck className="h-8 w-8 text-primary-foreground" />
+        <div className="relative flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <svg viewBox="0 0 24 24" fill="none" className="size-5" aria-hidden>
+              <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M3 15.5h18v3H3z" fill="currentColor" />
+            </svg>
+          </span>
+          <span className="text-lg font-semibold tracking-tight text-sidebar-accent-foreground">FlottAuto</span>
+        </div>
+
+        <div className="relative max-w-md">
+          <h2 className="text-[2.1rem] leading-[1.15] font-semibold tracking-tight text-sidebar-accent-foreground">
+            Votre flotte, pilotée en un clin d&apos;œil.
+          </h2>
+          <ul className="mt-10 space-y-6">
+            {highlights.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex gap-4">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-accent text-sidebar-primary">
+                  <Icon className="size-[18px]" />
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-sidebar-accent-foreground">{title}</p>
+                  <p className="mt-0.5 text-sm text-sidebar-muted">{text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-sidebar-muted">© {new Date().getFullYear()} FlottAuto · Gestion de flotte et de transport</p>
+      </div>
+
+      {/* Formulaire */}
+      <div className="flex items-center justify-center bg-background px-6 py-12">
+        <div className="w-full max-w-[380px]">
+          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <svg viewBox="0 0 24 24" fill="none" className="size-5" aria-hidden>
+                <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                <path d="M3 15.5h18v3H3z" fill="currentColor" />
+              </svg>
+            </span>
+            <span className="text-lg font-semibold tracking-tight">FlottAuto</span>
           </div>
-          <div>
-            <CardTitle className="text-3xl font-bold tracking-tight">FlottAuto</CardTitle>
-            <CardDescription className="mt-2 text-sm text-muted-foreground">
-              Connectez-vous à votre espace flotte
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+
+          <h1 className="text-2xl font-semibold tracking-tight">Connexion</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Accédez à l&apos;espace de gestion de votre flotte.</p>
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <Field label="Adresse e-mail" htmlFor="email">
               <Input
                 id="email"
                 type="email"
+                autoComplete="email"
+                placeholder="nom@entreprise.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="h-12 rounded-xl border-border/60 bg-muted/50 px-4 focus-visible:bg-background"
+                className="h-11"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Mot de passe</Label>
+            </Field>
+            <Field label="Mot de passe" htmlFor="password">
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="h-12 rounded-xl border-border/60 bg-muted/50 px-4 focus-visible:bg-background"
+                className="h-11"
               />
-            </div>
-            <Button
-              type="submit"
-              className="h-12 w-full gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 text-base font-semibold shadow-lg shadow-primary/25"
-              disabled={loading}
-            >
+            </Field>
+            <Button type="submit" size="lg" className="h-11 w-full" disabled={loading}>
               {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
                 <>
-                  Se connecter <ArrowRight className="h-5 w-5" />
+                  Se connecter <ArrowRight className="size-4" />
                 </>
               )}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            Pas encore de compte ? Demandez un accès à l&apos;administrateur de votre entreprise.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

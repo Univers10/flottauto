@@ -2,37 +2,40 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Bell, Check, LogOut, Search, Settings } from "lucide-react";
+import { AlertTriangle, Bell, Check, Info, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { removeToken, listAlerts, markAlertRead, refreshAlerts } from "@/lib/api";
+import { listAlerts, markAlertRead, refreshAlerts, removeToken } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { MobileSidebar } from "./sidebar";
+import { alertSeverity } from "@/lib/labels";
+import { toneSurface } from "@/components/app/primitives";
+import { fullName, initials } from "@/lib/format";
+import { roleLabels } from "@/lib/roles";
 import { cn } from "@/lib/utils";
-import type { AlertItem, Role } from "@/types";
+import type { AlertItem, User } from "@/types";
 import { toast } from "sonner";
 
-const severityConfig: Record<string, { icon: React.ElementType; color: string }> = {
-  critical: { icon: AlertTriangle, color: "bg-rose-50 text-rose-700" },
-  warning: { icon: Bell, color: "bg-amber-50 text-amber-700" },
-  info: { icon: Check, color: "bg-blue-50 text-blue-700" },
+const severityIcon: Record<string, React.ElementType> = {
+  critical: AlertTriangle,
+  warning: Bell,
+  info: Info,
 };
 
-export function Topbar({ user }: { user?: { first_name?: string | null; last_name?: string | null; email: string; role?: Role } }) {
+export function Topbar({ user }: { user: User }) {
   const router = useRouter();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   async function loadAlerts() {
     try {
       // La régénération des alertes passe par le dashboard, inaccessible aux maintenanciers.
-      if (user?.role !== "mechanic") await refreshAlerts();
+      if (user.role !== "mechanic") await refreshAlerts();
       const res = await listAlerts(true);
       setAlerts(res);
     } catch {
@@ -44,6 +47,7 @@ export function Topbar({ user }: { user?: { first_name?: string | null; last_nam
     loadAlerts();
     const interval = setInterval(loadAlerts, 60000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleMarkRead(id: number) {
@@ -61,38 +65,23 @@ export function Topbar({ user }: { user?: { first_name?: string | null; last_nam
     router.refresh();
   }
 
-  const initials = user
-    ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.toUpperCase() || user.email[0].toUpperCase()
-    : "?";
-  const fullName = user
-    ? `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || user.email
-    : "Invité";
+  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <header className="flex h-20 items-center justify-between gap-4 border-b border-border/60 bg-card/80 px-4 backdrop-blur-xl lg:px-8">
-      <div className="hidden items-center gap-3 md:flex">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Rechercher..."
-            className="h-10 w-64 rounded-xl border-border/60 bg-muted/50 pl-9 text-sm focus-visible:bg-background"
-          />
-        </div>
-      </div>
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 lg:px-8">
+      <MobileSidebar user={user} />
+      <p className="hidden text-[13px] text-muted-foreground capitalize sm:block">{today}</p>
 
-      <div className="flex flex-1 items-center justify-end gap-3 md:flex-none">
+      <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />
+
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button
-                variant="outline"
-                size="icon"
-                className="relative h-10 w-10 rounded-xl border-border/60 bg-muted/50 hover:bg-background"
-              >
-                <Bell className="h-5 w-5 text-muted-foreground" />
+              <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
+                <Bell className="size-[18px]" />
                 {alerts.length > 0 && (
-                  <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white ring-2 ring-card">
+                  <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white ring-2 ring-background tabular">
                     {alerts.length > 9 ? "9+" : alerts.length}
                   </span>
                 )}
@@ -100,75 +89,86 @@ export function Topbar({ user }: { user?: { first_name?: string | null; last_nam
               </Button>
             }
           />
-          <DropdownMenuContent align="end" className="w-80 rounded-xl p-2">
-            <div className="flex items-center justify-between px-1.5 py-1">
+          <DropdownMenuContent align="end" className="w-[22rem] p-0">
+            <div className="flex items-center justify-between border-b px-4 py-3">
               <span className="text-sm font-semibold">Notifications</span>
-              {alerts.length > 0 && (
-                <span className="text-xs text-muted-foreground">{alerts.length} non lue(s)</span>
-              )}
+              {alerts.length > 0 && <span className="text-xs text-muted-foreground tabular">{alerts.length} non lue(s)</span>}
             </div>
-            <DropdownMenuSeparator />
             {alerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm text-muted-foreground">
-                <Check className="h-6 w-6 opacity-40" />
-                Aucune notification non lue.
+              <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
+                <span className="flex size-9 items-center justify-center rounded-full border bg-surface-sunken">
+                  <Check className="size-4" />
+                </span>
+                Tout est à jour.
               </div>
             ) : (
-              <div className="max-h-80 space-y-1 overflow-y-auto">
+              <div className="scrollbar-thin max-h-96 divide-y overflow-y-auto">
                 {alerts.slice(0, 8).map((alert) => {
-                  const cfg = severityConfig[alert.severity] ?? severityConfig.info;
-                  const Icon = cfg.icon;
+                  const sev = alertSeverity[alert.severity] ?? alertSeverity.info;
+                  const Icon = severityIcon[alert.severity] ?? Info;
                   return (
-                    <div
-                      key={alert.id}
-                      className="flex items-start gap-2.5 rounded-lg p-2 transition-colors hover:bg-accent"
-                    >
-                      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", cfg.color)}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 space-y-0.5">
-                        <p className="text-sm font-medium leading-tight">{alert.title}</p>
-                        {alert.message && (
-                          <p className="line-clamp-2 text-xs text-muted-foreground">{alert.message}</p>
-                        )}
+                    <div key={alert.id} className="group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent/60">
+                      <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border", toneSurface(sev.tone))}>
+                        <Icon className="size-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] leading-snug font-medium">{alert.title}</p>
+                        {alert.message && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{alert.message}</p>}
                       </div>
                       <button
                         onClick={() => handleMarkRead(alert.id)}
-                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="shrink-0 rounded-md p-1 text-subtle-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
                         title="Marquer comme lu"
+                        aria-label="Marquer comme lu"
                       >
-                        <Check className="h-4 w-4" />
+                        <Check className="size-4" />
                       </button>
                     </div>
                   );
                 })}
               </div>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/alerts")} className="justify-center text-sm font-medium">
-              Voir toutes les notifications
-            </DropdownMenuItem>
+            <div className="border-t p-1">
+              <DropdownMenuItem onClick={() => router.push("/alerts")} className="justify-center text-[13px] font-medium">
+                Voir toutes les alertes
+              </DropdownMenuItem>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <div className="mx-1.5 h-5 w-px bg-border" aria-hidden />
+
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <div className="flex h-10 cursor-pointer items-center gap-2 rounded-xl px-2 transition-colors hover:bg-muted/50">
-              <Avatar className="h-8 w-8 border border-border/60">
-                <AvatarFallback className="bg-gradient-to-br from-primary to-blue-600 text-xs font-semibold text-primary-foreground">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden text-sm font-medium lg:inline">{fullName}</span>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="flex h-9 items-center gap-2.5 rounded-lg pr-2 pl-1 transition-colors hover:bg-accent aria-expanded:bg-accent"
+              >
+                <span className="flex size-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                  {initials(user.first_name, user.last_name, user.email)}
+                </span>
+                <span className="hidden text-left leading-tight md:block">
+                  <span className="block text-[13px] font-medium">{fullName(user)}</span>
+                </span>
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end" className="w-60">
+            <div className="px-2 py-2">
+              <p className="truncate text-sm font-medium">{fullName(user)}</p>
+              <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+              <p className="mt-1.5 inline-flex rounded-md border bg-surface-sunken px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {roleLabels[user.role]}
+              </p>
             </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 rounded-xl">
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>
-              <Settings className="mr-2 h-4 w-4" />
+              <Settings className="size-4" />
               Paramètres
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
+            <DropdownMenuItem onClick={handleLogout} variant="destructive">
+              <LogOut className="size-4" />
               Déconnexion
             </DropdownMenuItem>
           </DropdownMenuContent>

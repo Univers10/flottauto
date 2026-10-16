@@ -3,6 +3,13 @@ import { AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, 
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
+/** URL absolue d'un fichier servi par le backend (/uploads/...). */
+export function assetUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith("http")) return path;
+  return `${API_URL.replace(/\/api\/v1\/?$/, "")}${path}`;
+}
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("flottauto_token");

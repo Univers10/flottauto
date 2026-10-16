@@ -1,29 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Search, Phone, Mail } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Plus, Search, Users } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState, PageHeader, Panel, Plate, StatusBadge, Toolbar, toneText } from "@/components/app/primitives";
+import { api, listVehicles } from "@/lib/api";
+import { formatDate, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
-import type { Driver } from "@/types";
+import type { Driver, Vehicle } from "@/types";
 import { toast } from "sonner";
 
+type ActiveFilter = "all" | "active" | "inactive";
+
+/** Ton d'une échéance : expirée = danger, moins de 30 jours = warning. */
 export default function DriversPage() {
+  const router = useRouter();
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [active, setActive] = useState<ActiveFilter>("all");
 
   async function loadDrivers() {
     setLoading(true);
     try {
-      const res = await api.get<Driver[]>("/drivers");
+      const [res, vehiclesRes] = await Promise.all([
+        api.get<Driver[]>("/drivers"),
+        // Véhicules affectés : information complémentaire, un échec ne bloque pas la liste.
+        listVehicles({ size: 100 }).catch(() => null),
+      ]);
       setDrivers(res);
+      setVehicles(vehiclesRes?.items ?? []);
     } catch (err: any) {
       toast.error(err.message || "Erreur de chargement");
     } finally {
@@ -35,87 +48,161 @@ export default function DriversPage() {
     loadDrivers();
   }, []);
 
-  const filtered = drivers.filter((d) =>
-    `${d.first_name} ${d.last_name} ${d.email}`.toLowerCase().includes(q.toLowerCase())
+  const vehicleByDriver = useMemo(() => {
+    const map = new Map<number, Vehicle>();
+    vehicles.forEach((v) => {
+      if (v.driver_id != null && !map.has(v.driver_id)) map.set(v.driver_id, v);
+    });
+    return map;
+  }, [vehicles]);
+
+  const searched = drivers.filter((d) =>
+    `${d.first_name} ${d.last_name} ${d.email ?? ""} ${d.phone ?? ""} ${d.license_number ?? ""}`.toLowerCase().includes(q.toLowerCase())
   );
+  const counts: Record<ActiveFilter, number> = {
+    all: searched.length,
+    active: searched.filter((d) => d.is_active).length,
+    inactive: searched.filter((d) => !d.is_active).length,
+  };
+  const visible = active === "all" ? searched : searched.filter((d) => (active === "active" ? d.is_active : !d.is_active));
+  const filters: { value: ActiveFilter; label: string }[] = [
+    { value: "all", label: "Tous" },
+    { value: "active", label: "Actifs" },
+    { value: "inactive", label: "Inactifs" },
+  ];
+  const filtering = q !== "" || active !== "all";
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Conducteurs</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{drivers.length} conducteur(s) enregistrés</p>
-          </div>
-          <Link href="/drivers/new">
-            <Button className="h-10 gap-2 rounded-xl px-5 shadow-md shadow-primary/20">
-              <Plus className="h-4 w-4" />
-              Nouveau conducteur
-            </Button>
+      <PageHeader
+        title="Conducteurs"
+        description={`${drivers.length} conducteur(s) enregistré(s)`}
+        actions={
+          <Link href="/drivers/new" className={buttonVariants()}>
+            <Plus className="size-4" />
+            Nouveau conducteur
           </Link>
-        </div>
+        }
+      />
 
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-lg font-semibold">Liste des conducteurs</CardTitle>
-            <div className="relative max-w-xs">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Rechercher un conducteur..."
-                className="h-10 w-full rounded-xl border-border/60 bg-muted/50 pl-9 text-sm focus-visible:bg-background"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-xl" />
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                Aucun conducteur trouvé.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {filtered.map((driver) => (
-                  <Link key={driver.id} href={`/drivers/${driver.id}`} className="block">
-                    <Card className="group cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm shadow-black/5 transition-all hover:-translate-y-1 hover:shadow-lg">
-                      <CardContent className="space-y-4 p-5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-blue-600 text-lg font-bold text-primary-foreground">
-                            {driver.first_name[0]}{driver.last_name[0]}
-                          </div>
-                          <Badge className={cn("rounded-lg border-0 px-2.5 py-0.5 font-medium", driver.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
-                            {driver.is_active ? "Actif" : "Inactif"}
-                          </Badge>
+      <Panel flush>
+        <Toolbar className="justify-between">
+          <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">
+            {filters.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setActive(f.value)}
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
+                  active === f.value ? "bg-secondary text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                {f.label}
+                <span className="rounded bg-muted px-1.5 text-[11px] text-muted-foreground tabular">{counts[f.value]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground" />
+            <Input placeholder="Nom, email, téléphone, permis…" className="h-9 pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+        </Toolbar>
+
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={filtering ? "Aucun conducteur ne correspond" : "Aucun conducteur"}
+            description={filtering ? "Modifiez la recherche ou le filtre." : "Ajoutez votre premier conducteur pour commencer."}
+            action={
+              !filtering ? (
+                <Link href="/drivers/new" className={buttonVariants()}>
+                  <Plus className="size-4" />
+                  Nouveau conducteur
+                </Link>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Conducteur</TableHead>
+                <TableHead className="hidden md:table-cell">Contact</TableHead>
+                <TableHead className="hidden lg:table-cell">Permis</TableHead>
+                <TableHead>Expiration permis</TableHead>
+                <TableHead className="hidden md:table-cell">Véhicule</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((d) => {
+                const vehicle = vehicleByDriver.get(d.id);
+                const tone = expiryTone(d.license_expiry);
+                return (
+                  <TableRow key={d.id} className="group cursor-pointer" onClick={() => router.push(`/drivers/${d.id}`)}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-xs font-semibold text-primary">
+                          {initials(d.first_name, d.last_name)}
+                        </span>
+                        <div className="min-w-0">
+                          <Link href={`/drivers/${d.id}`} className="block truncate font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                            {fullName(d)}
+                          </Link>
+                          <p className="truncate text-xs text-muted-foreground md:hidden">{d.phone || d.email || "—"}</p>
                         </div>
-                        <div>
-                          <h3 className="font-semibold">{driver.first_name} {driver.last_name}</h3>
-                          <p className="text-sm text-muted-foreground">{driver.license_number || "Aucun permis"}</p>
-                        </div>
-                        <div className="space-y-1.5 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-3.5 w-3.5" />
-                            <span className="truncate">{driver.email || "—"}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-3.5 w-3.5" />
-                            <span>{driver.phone || "—"}</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <p className="tabular">{d.phone || "—"}</p>
+                      <p className="max-w-[220px] truncate text-xs text-muted-foreground">{d.email || "Aucun email"}</p>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {d.license_number ? (
+                        <>
+                          <p className="font-mono text-xs">{d.license_number}</p>
+                          <p className="text-xs text-muted-foreground">{d.license_categories ? `Cat. ${d.license_categories}` : "Catégories non renseignées"}</p>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">Non renseigné</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {d.license_expiry ? (
+                        <>
+                          <p className="tabular">{formatDate(d.license_expiry)}</p>
+                          <p className={cn("text-xs", tone ? cn(toneText(tone), "font-medium") : "text-muted-foreground")}>
+                            {tone === "danger" ? "Expiré " : ""}
+                            {formatRelativeDays(d.license_expiry)}
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {vehicle ? <Plate value={vehicle.registration} size="sm" /> : <span className="text-xs text-muted-foreground">Aucun</span>}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge tone={d.is_active ? "success" : "neutral"}>{d.is_active ? "Actif" : "Inactif"}</StatusBadge>
+                    </TableCell>
+                    <TableCell className="pr-4">
+                      <ChevronRight className="size-4 text-subtle-foreground transition-transform group-hover:translate-x-0.5" />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Panel>
     </AppShell>
   );
 }

@@ -3,44 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  Calendar,
-  Car,
-  FileText,
-  IdCard,
-  Pencil,
-  RotateCcw,
-  Save,
-  ShieldCheck,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { Car, ExternalLink, FileText, Mail, Pencil, Phone, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DetailList, EmptyState, Field, FormSection, PageHeader, Panel, Plate, StatusBadge, toneText } from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
 import {
-  api,
+  assetUrl,
   getDriver,
   updateDriver,
   deleteDriver,
@@ -50,18 +26,22 @@ import {
   updateDriverDocument,
   deleteDriverDocument,
 } from "@/lib/api";
+import { documentTypeLabels } from "@/lib/labels";
+import { formatDate, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
 import { toast } from "sonner";
 import type { Document, Driver, Vehicle } from "@/types";
 
-const driverDocTypeLabels: Record<string, string> = {
-  license: "Permis de conduire",
-  id_card: "Pièce d'identité",
-  medical: "Visite médicale",
-  insurance: "Assurance",
-  other: "Autre",
-};
+/** Types de pièces proposés pour un conducteur (libellés partagés). */
+const driverDocTypes = ["license", "id_card", "medical", "insurance", "other"] as const;
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1").replace("/api/v1", "");
+/** Ton d'une échéance : expirée = danger, moins de 30 jours = warning. */
+function ExpiryBadge({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="text-muted-foreground">—</span>;
+  const tone = expiryTone(value);
+  if (tone === "danger") return <StatusBadge tone="danger">Expiré</StatusBadge>;
+  if (tone === "warning") return <StatusBadge tone="warning">{formatRelativeDays(value)}</StatusBadge>;
+  return <StatusBadge tone="success">Valide</StatusBadge>;
+}
 
 export default function DriverProfilePage() {
   const params = useParams<{ id: string }>();
@@ -302,375 +282,440 @@ export default function DriverProfilePage() {
     return (
       <AppShell>
         <div className="space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-8 w-64" />
+          </div>
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <div className="grid gap-6 xl:grid-cols-3">
+            <Skeleton className="h-96 w-full rounded-xl xl:col-span-2" />
+            <Skeleton className="h-64 w-full rounded-xl" />
+          </div>
         </div>
       </AppShell>
     );
   }
 
-  const licenseExpired = licenseExpiry && new Date(licenseExpiry) < new Date();
-  const licenseExpiringSoon =
-    licenseExpiry &&
-    !licenseExpired &&
-    new Date(licenseExpiry) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const name = fullName(driver);
+  const formExpiryTone = expiryTone(licenseExpiry);
+  const savedExpiryTone = expiryTone(driver.license_expiry);
+  const docTypeLabel = (type: string) => documentTypeLabels[type] ?? type;
+
+  const docTypeSelectItems = (
+    <SelectContent>
+      {driverDocTypes.map((value) => (
+        <SelectItem key={value} value={value}>
+          {documentTypeLabels[value]}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  );
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/drivers">
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                {driver.first_name} {driver.last_name}
-              </h1>
-              <p className="text-sm text-muted-foreground">{driver.email || "Aucun email"}</p>
-            </div>
-          </div>
-          <Badge className={cn("rounded-lg border-0 px-3 py-1 font-medium", isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
-            {isActive ? "Actif" : "Inactif"}
-          </Badge>
-        </div>
+      <PageHeader
+        title={name}
+        breadcrumb={[{ label: "Conducteurs", href: "/drivers" }, { label: name }]}
+        actions={
+          <>
+            <StatusBadge tone={driver.is_active ? "success" : "neutral"}>{driver.is_active ? "Actif" : "Inactif"}</StatusBadge>
+            <Button variant="destructive" onClick={remove}>
+              <Trash2 className="size-4" />
+              Supprimer
+            </Button>
+          </>
+        }
+      />
 
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="overflow-hidden rounded-2xl border-none bg-card shadow-sm shadow-black/5 lg:col-span-2">
-            <div className="relative h-32 bg-gradient-to-br from-primary to-blue-600">
-              <div className="absolute -bottom-10 left-6 flex h-20 w-20 items-center justify-center rounded-2xl border-4 border-card bg-card text-2xl font-bold text-primary shadow-lg">
-                {driver.first_name[0]}{driver.last_name[0]}
-              </div>
-            </div>
-            <CardContent className="pt-14">
-              <CardTitle className="mb-4 text-lg font-semibold">Informations</CardTitle>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">Prénom</Label>
+      {/* Profil */}
+      <section className="mb-6 flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-lg font-semibold text-primary">
+          {initials(driver.first_name, driver.last_name)}
+        </span>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <p className="truncate text-base font-semibold">{name}</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Phone className="size-3.5 text-subtle-foreground" />
+              <span className="tabular">{driver.phone || "Aucun téléphone"}</span>
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Mail className="size-3.5 text-subtle-foreground" />
+              {driver.email ? (
+                <a href={`mailto:${driver.email}`} className="truncate hover:text-foreground hover:underline">
+                  {driver.email}
+                </a>
+              ) : (
+                <span>Aucun email</span>
+              )}
+            </span>
+          </div>
+        </div>
+        <dl className="grid shrink-0 grid-cols-3 gap-6 border-t pt-4 text-sm sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+          <div>
+            <dt className="text-xs text-muted-foreground">Permis</dt>
+            <dd className="mt-1 font-mono text-xs font-medium">{driver.license_number || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Catégories</dt>
+            <dd className="mt-1 font-medium">{driver.license_categories || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Expiration</dt>
+            <dd className={cn("mt-1 font-medium tabular", savedExpiryTone && toneText(savedExpiryTone))}>{formatDate(driver.license_expiry)}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          {/* Édition */}
+          <Panel title="Informations" description="Modifiez la fiche puis enregistrez." bodyClassName="p-0">
+            <div className="divide-y p-5">
+              <FormSection title="Identité">
+                <Field label="Prénom" htmlFor="firstName">
                   <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">Nom</Label>
+                </Field>
+                <Field label="Nom" htmlFor="lastName">
                   <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                </Field>
+              </FormSection>
+
+              <FormSection title="Coordonnées">
+                <Field label="Email" htmlFor="email">
                   <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Téléphone</Label>
-                  <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="license">Numéro de permis</Label>
+                </Field>
+                <Field label="Téléphone" htmlFor="phone">
+                  <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </Field>
+              </FormSection>
+
+              <FormSection title="Permis et aptitude" description="Dates de validité du permis et de la dernière visite médicale.">
+                <Field label="Numéro de permis" htmlFor="license">
                   <Input id="license" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="categories">Catégories</Label>
-                  <Input id="categories" value={licenseCategories} onChange={(e) => setLicenseCategories(e.target.value)} placeholder="B, C, D..." />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="licenseExpiry">Expiration du permis</Label>
+                </Field>
+                <Field label="Catégories" htmlFor="categories">
+                  <Input id="categories" value={licenseCategories} onChange={(e) => setLicenseCategories(e.target.value)} placeholder="B, C, D…" />
+                </Field>
+                <Field
+                  label="Expiration du permis"
+                  htmlFor="licenseExpiry"
+                  hint={
+                    formExpiryTone ? (
+                      <span className={cn("font-medium", toneText(formExpiryTone))}>
+                        {formExpiryTone === "danger" ? "Permis expiré" : "Expire bientôt"} · {formatRelativeDays(licenseExpiry)}
+                      </span>
+                    ) : undefined
+                  }
+                >
                   <DateInput
                     id="licenseExpiry"
                     value={licenseExpiry}
                     onValueChange={setLicenseExpiry}
-                    className={cn(licenseExpired && "border-rose-400 text-rose-600", licenseExpiringSoon && "border-amber-400 text-amber-600")}
+                    className={cn(formExpiryTone === "danger" && "border-danger-border", formExpiryTone === "warning" && "border-warning-border")}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="medical">Visite médicale</Label>
+                </Field>
+                <Field label="Visite médicale" htmlFor="medical">
                   <DateInput id="medical" value={medicalCheckDate} onValueChange={setMedicalCheckDate} />
-                </div>
-              </div>
+                </Field>
+              </FormSection>
 
-              <div className="mt-6 flex items-center justify-between rounded-xl bg-muted/40 p-4">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Conducteur actif</span>
-                </div>
-                <Switch checked={isActive} onCheckedChange={setIsActive} />
-              </div>
-
-              <div className="mt-6 flex flex-wrap justify-end gap-3">
-                <Button variant="outline" onClick={resetForm} className="h-11 gap-2 rounded-xl px-5">
-                  <RotateCcw className="h-4 w-4" />
-                  Réinitialiser
-                </Button>
-                <Button variant="destructive" onClick={remove} className="h-11 gap-2 rounded-xl px-5">
-                  <Trash2 className="h-4 w-4" />
-                  Supprimer
-                </Button>
-                <Button onClick={save} disabled={saving} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                  <Save className="h-4 w-4" />
-                  {saving ? "Sauvegarde..." : "Enregistrer"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-5">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Car className="h-5 w-5 text-primary" />
-                  Véhicule affecté
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {vehicle ? (
-                  <div className="space-y-3">
-                    <p className="text-lg font-semibold">
-                      {vehicle.brand} {vehicle.model}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{vehicle.registration}</p>
-                    <Link href={`/vehicles/${vehicle.id}`}>
-                      <Button variant="outline" className="mt-2 w-full rounded-xl">
-                        Voir la fiche véhicule
-                      </Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="flex h-24 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucun véhicule affecté.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Calendar className="h-5 w-5 text-primary" />
-                  Échéances
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl bg-muted/40 p-3">
-                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <IdCard className="h-4 w-4" />
-                    Permis
+              <FormSection title="Statut">
+                <label htmlFor="isActive" className="flex items-center justify-between gap-4 rounded-lg border bg-surface-sunken px-3.5 py-3 sm:col-span-2">
+                  <span>
+                    <span className="block text-[13px] font-medium">Conducteur actif</span>
+                    <span className="block text-xs text-muted-foreground">{isActive ? "Le conducteur est actif." : "Le conducteur est désactivé."}</span>
                   </span>
-                  <span
-                    className={cn(
-                      "text-sm font-semibold",
-                      licenseExpired && "text-rose-600",
-                      licenseExpiringSoon && "text-amber-600"
-                    )}
-                  >
-                    {driver.license_expiry ? new Date(driver.license_expiry).toLocaleDateString("fr-FR") : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-muted/40 p-3">
-                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <ShieldCheck className="h-4 w-4" />
-                    Visite médicale
-                  </span>
-                  <span className="text-sm font-semibold">
-                    {driver.medical_check_date ? new Date(driver.medical_check_date).toLocaleDateString("fr-FR") : "—"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                  <Switch id="isActive" checked={isActive} onCheckedChange={setIsActive} />
+                </label>
+              </FormSection>
+            </div>
 
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-              <FileText className="h-5 w-5 text-primary" />
-              Pièces du conducteur ({documents.length})
-            </CardTitle>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setUploadOpen(true)}
-                className="h-10 gap-2 rounded-xl px-4"
-              >
-                <Upload className="h-4 w-4" />
-                Ajouter un document
+            <div className="flex flex-wrap justify-end gap-2 border-t bg-surface-sunken px-5 py-3">
+              <Button variant="outline" onClick={resetForm}>
+                <RotateCcw className="size-4" />
+                Réinitialiser
+              </Button>
+              <Button onClick={save} disabled={saving}>
+                <Save className="size-4" />
+                {saving ? "Enregistrement…" : "Enregistrer"}
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
+          </Panel>
+
+          {/* Pièces */}
+          <Panel
+            flush
+            title={
+              <span className="flex items-center gap-2">
+                Pièces du conducteur
+                <span className="rounded bg-muted px-1.5 text-[11px] font-medium text-muted-foreground tabular">{documents.length}</span>
+              </span>
+            }
+            description="Permis, pièce d'identité, certificat médical…"
+            actions={
+              <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
+                <Upload className="size-3.5" />
+                Ajouter
+              </Button>
+            }
+          >
             {documents.length === 0 ? (
-              <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                Aucune pièce jointe. Ajoutez le permis, la pièce d&apos;identité, etc.
+              <EmptyState
+                icon={FileText}
+                title="Aucune pièce jointe"
+                description="Ajoutez le permis, la pièce d'identité ou le certificat médical du conducteur."
+                action={
+                  <Button variant="outline" onClick={() => setUploadOpen(true)}>
+                    <Upload className="size-4" />
+                    Ajouter un document
+                  </Button>
+                }
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Document</TableHead>
+                    <TableHead className="hidden sm:table-cell">Type</TableHead>
+                    <TableHead>Échéance</TableHead>
+                    <TableHead className="w-0 text-right">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {documents.map((doc) => {
+                    const fileUrl = assetUrl(doc.file_url);
+                    const tone = expiryTone(doc.expiry_date);
+                    return (
+                      <TableRow key={doc.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-surface-sunken text-muted-foreground">
+                              <FileText className="size-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="max-w-[260px] truncate font-medium">{doc.name}</p>
+                              <p className="text-xs text-muted-foreground sm:hidden">{docTypeLabel(doc.document_type)}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden text-muted-foreground sm:table-cell">{docTypeLabel(doc.document_type)}</TableCell>
+                        <TableCell>
+                          {doc.expiry_date ? (
+                            <>
+                              <p className="tabular">{formatDate(doc.expiry_date)}</p>
+                              <p className={cn("text-xs", tone ? cn(toneText(tone), "font-medium") : "text-muted-foreground")}>
+                                {tone === "danger" ? "Expiré " : ""}
+                                {formatRelativeDays(doc.expiry_date)}
+                              </p>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {fileUrl ? (
+                              <a
+                                href={fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+                                aria-label={`Ouvrir ${doc.name}`}
+                                title="Ouvrir"
+                              >
+                                <ExternalLink className="size-4" />
+                              </a>
+                            ) : null}
+                            <Button variant="ghost" size="icon-sm" onClick={() => openDocEdit(doc)} aria-label={`Modifier ${doc.name}`} title="Modifier">
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => deleteDoc(doc)}
+                              aria-label={`Supprimer ${doc.name}`}
+                              title="Supprimer"
+                              className="text-muted-foreground hover:bg-danger-subtle hover:text-danger"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </Panel>
+        </div>
+
+        <div className="space-y-6">
+          <Panel title="Véhicule affecté">
+            {vehicle ? (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">
+                      {vehicle.brand} {vehicle.model}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{vehicle.year ?? "Année inconnue"}</p>
+                  </div>
+                  <Plate value={vehicle.registration} />
+                </div>
+                <Link href={`/vehicles/${vehicle.id}`} className={cn(buttonVariants({ variant: "outline" }), "w-full")}>
+                  Voir la fiche véhicule
+                </Link>
               </div>
             ) : (
-              <div className="space-y-3">
-                {documents.map((doc) => {
-                  const fullUrl = doc.file_url?.startsWith("http") ? doc.file_url : `${API_BASE_URL}${doc.file_url || ""}`;
-                  return (
-                    <div
-                      key={doc.id}
-                      className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{doc.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {driverDocTypeLabels[doc.document_type] || doc.document_type}
-                          {doc.expiry_date ? ` · Échéance ${new Date(doc.expiry_date).toLocaleDateString("fr-FR")}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        {doc.file_url ? (
-                          <a href={fullUrl} target="_blank" rel="noreferrer">
-                            <Button variant="outline" className="h-9 rounded-xl px-3">
-                              Ouvrir
-                            </Button>
-                          </a>
-                        ) : null}
-                        <Button variant="outline" onClick={() => openDocEdit(doc)} className="h-9 gap-1 rounded-xl px-3">
-                          <Pencil className="h-3.5 w-3.5" />
-                          Modifier
-                        </Button>
-                        <Button variant="destructive" onClick={() => deleteDoc(doc)} className="h-9 gap-1 rounded-xl px-3">
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Supprimer
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-surface-sunken text-subtle-foreground">
+                  <Car className="size-4" />
+                </span>
+                Aucun véhicule affecté.
               </div>
             )}
-          </CardContent>
-        </Card>
+          </Panel>
 
-        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-          <DialogContent className="rounded-2xl border-none p-6 sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-semibold">Ajouter une pièce du conducteur</DialogTitle>
-            </DialogHeader>
-            <form key={uploadFormKey} onSubmit={handleDocUpload} className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="driver-doc-name">Nom</Label>
-                <Input id="driver-doc-name" name="name" placeholder="Permis B (optionnel si plusieurs fichiers)" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="driver-doc-type">Type</Label>
-                <Select value={docType} onValueChange={(v) => setDocType(v || "license")}>
-                  <SelectTrigger id="driver-doc-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(driverDocTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="driver-doc-issue">Date d&apos;émission</Label>
-                  <Input id="driver-doc-issue" name="issue_date" type="date" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="driver-doc-expiry">Date d&apos;expiration</Label>
-                  <Input id="driver-doc-expiry" name="expiry_date" type="date" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="driver-doc-files">Fichiers</Label>
-                <Input id="driver-doc-files" name="files" type="file" multiple required />
-                <p className="text-xs text-muted-foreground">
-                  Permis, pièce d&apos;identité, certificat médical… vous pouvez en joindre plusieurs.
-                </p>
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setUploadOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
-                  Annuler
-                </Button>
-                <Button type="submit" disabled={uploading} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                  {uploading ? "Envoi..." : "Enregistrer"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+          <Panel title="Échéances">
+            <DetailList
+              items={[
+                {
+                  label: "Permis",
+                  value: (
+                    <span className="flex items-center justify-end gap-2">
+                      <span className={cn(savedExpiryTone && toneText(savedExpiryTone))}>{formatDate(driver.license_expiry)}</span>
+                      {driver.license_expiry && <ExpiryBadge value={driver.license_expiry} />}
+                    </span>
+                  ),
+                },
+                { label: "Visite médicale", value: formatDate(driver.medical_check_date) },
+              ]}
+            />
+          </Panel>
 
-        <Dialog open={docEditOpen} onOpenChange={setDocEditOpen}>
-          <DialogContent className="rounded-2xl border-none p-6 sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-semibold">Modifier le document</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleDocEditSubmit} className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label htmlFor="edit-driver-doc-name">Nom</Label>
-                <Input
-                  id="edit-driver-doc-name"
-                  required
-                  value={docEditForm.name}
-                  onChange={(e) => setDocEditForm((p) => ({ ...p, name: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-driver-doc-type">Type</Label>
-                <Select
-                  value={docEditForm.document_type}
-                  onValueChange={(v) => setDocEditForm((p) => ({ ...p, document_type: v || "other" }))}
-                >
-                  <SelectTrigger id="edit-driver-doc-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(driverDocTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-driver-doc-issue">Date d&apos;émission</Label>
-                  <Input
-                    id="edit-driver-doc-issue"
-                    type="date"
-                    value={docEditForm.issue_date}
-                    onChange={(e) => setDocEditForm((p) => ({ ...p, issue_date: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-driver-doc-expiry">Date d&apos;expiration</Label>
-                  <Input
-                    id="edit-driver-doc-expiry"
-                    type="date"
-                    value={docEditForm.expiry_date}
-                    onChange={(e) => setDocEditForm((p) => ({ ...p, expiry_date: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-driver-doc-reminder">Rappel (jours avant)</Label>
-                <Input
-                  id="edit-driver-doc-reminder"
-                  type="number"
-                  min={0}
-                  value={docEditForm.reminder_days}
-                  onChange={(e) => setDocEditForm((p) => ({ ...p, reminder_days: e.target.value }))}
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setDocEditOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
-                  Annuler
-                </Button>
-                <Button type="submit" disabled={savingDocEdit} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                  <Save className="h-4 w-4" />
-                  {savingDocEdit ? "Sauvegarde..." : "Enregistrer"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+          <Panel title="Fiche">
+            <DetailList
+              items={[
+                { label: "Créé le", value: formatDate(driver.created_at) },
+                { label: "Mis à jour", value: formatDate(driver.updated_at) },
+                { label: "Compte utilisateur", value: driver.user_id ? "Lié" : "Aucun" },
+              ]}
+            />
+          </Panel>
+        </div>
       </div>
+
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter une pièce</DialogTitle>
+            <DialogDescription>Vous pouvez joindre plusieurs fichiers en une fois.</DialogDescription>
+          </DialogHeader>
+          <form key={uploadFormKey} onSubmit={handleDocUpload} className="space-y-4">
+            <Field label="Nom" htmlFor="driver-doc-name" hint="Optionnel si plusieurs fichiers : le nom du fichier est utilisé.">
+              <Input id="driver-doc-name" name="name" placeholder="Permis B" />
+            </Field>
+            <Field label="Type" htmlFor="driver-doc-type">
+              <Select items={documentTypeLabels} value={docType} onValueChange={(v) => setDocType(v || "license")}>
+                <SelectTrigger id="driver-doc-type">
+                  <SelectValue />
+                </SelectTrigger>
+                {docTypeSelectItems}
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Date d'émission" htmlFor="driver-doc-issue">
+                <Input id="driver-doc-issue" name="issue_date" type="date" />
+              </Field>
+              <Field label="Date d'expiration" htmlFor="driver-doc-expiry">
+                <Input id="driver-doc-expiry" name="expiry_date" type="date" />
+              </Field>
+            </div>
+            <Field label="Fichiers" htmlFor="driver-doc-files" required hint="Permis, pièce d'identité, certificat médical…">
+              <Input id="driver-doc-files" name="files" type="file" multiple required />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={uploading}>
+                <Upload className="size-4" />
+                {uploading ? "Envoi…" : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={docEditOpen} onOpenChange={setDocEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifier le document</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleDocEditSubmit} className="space-y-4">
+            <Field label="Nom" htmlFor="edit-driver-doc-name" required>
+              <Input
+                id="edit-driver-doc-name"
+                required
+                value={docEditForm.name}
+                onChange={(e) => setDocEditForm((p) => ({ ...p, name: e.target.value }))}
+              />
+            </Field>
+            <Field label="Type" htmlFor="edit-driver-doc-type">
+              <Select
+                items={documentTypeLabels}
+                value={docEditForm.document_type}
+                onValueChange={(v) => setDocEditForm((p) => ({ ...p, document_type: v || "other" }))}
+              >
+                <SelectTrigger id="edit-driver-doc-type">
+                  <SelectValue />
+                </SelectTrigger>
+                {docTypeSelectItems}
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Date d'émission" htmlFor="edit-driver-doc-issue">
+                <Input
+                  id="edit-driver-doc-issue"
+                  type="date"
+                  value={docEditForm.issue_date}
+                  onChange={(e) => setDocEditForm((p) => ({ ...p, issue_date: e.target.value }))}
+                />
+              </Field>
+              <Field label="Date d'expiration" htmlFor="edit-driver-doc-expiry">
+                <Input
+                  id="edit-driver-doc-expiry"
+                  type="date"
+                  value={docEditForm.expiry_date}
+                  onChange={(e) => setDocEditForm((p) => ({ ...p, expiry_date: e.target.value }))}
+                />
+              </Field>
+            </div>
+            <Field label="Rappel (jours avant)" htmlFor="edit-driver-doc-reminder">
+              <Input
+                id="edit-driver-doc-reminder"
+                type="number"
+                min={0}
+                value={docEditForm.reminder_days}
+                onChange={(e) => setDocEditForm((p) => ({ ...p, reminder_days: e.target.value }))}
+              />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDocEditOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={savingDocEdit}>
+                <Save className="size-4" />
+                {savingDocEdit ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

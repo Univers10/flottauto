@@ -1,30 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CreditCard, Landmark, Plus, Receipt, Search, Trash2, Truck, Wallet } from "lucide-react";
+import { CalendarDays, CreditCard, Landmark, Plus, Search, Trash2, Wallet } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState, Field, PageHeader, Panel, Plate, StatCard, Toolbar } from "@/components/app/primitives";
 import {
   createTollExpense,
   deleteTollExpense,
@@ -33,22 +25,12 @@ import {
   updateTollExpense,
   api,
 } from "@/lib/api";
+import { tollMethodLabels } from "@/lib/labels";
+import { formatDate, formatMoney, formatNumber } from "@/lib/format";
 import type { Driver, TollExpense, TollPaymentMethod, Vehicle } from "@/types";
 import { toast } from "sonner";
 
-const methodLabels: Record<TollPaymentMethod, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  badge: "Badge / Télépéage",
-  other: "Autre",
-};
-
-const methodBadges: Record<TollPaymentMethod, { bg: string; text: string }> = {
-  cash: { bg: "bg-emerald-50", text: "text-emerald-700" },
-  card: { bg: "bg-blue-50", text: "text-blue-700" },
-  badge: { bg: "bg-violet-50", text: "text-violet-700" },
-  other: { bg: "bg-slate-100", text: "text-slate-700" },
-};
+const driverName = (d: Driver) => `${d.first_name} ${d.last_name}`.trim();
 
 const emptyForm = {
   vehicle_id: "",
@@ -187,286 +169,255 @@ export default function TollsPage() {
 
   const badgeCount = useMemo(() => tolls.filter((t) => t.payment_method === "badge").length, [tolls]);
 
+  const vehicleById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
+  const driverById = useMemo(() => new Map(drivers.map((d) => [d.id, d])), [drivers]);
+  const hasFilters = Boolean(search || vehicleFilter);
+
+  // Libellés affichés dans les déclencheurs de Select (sinon la valeur brute — un id — apparaît).
+  const vehicleItems = useMemo(
+    () => Object.fromEntries(vehicles.map((v) => [String(v.id), `${v.registration} — ${v.brand} ${v.model}`])),
+    [vehicles]
+  );
+  const vehicleFilterItems = useMemo(() => ({ "": "Tous les véhicules", ...vehicleItems }), [vehicleItems]);
+  const driverItems = useMemo(
+    () => ({ "": "Aucun", ...Object.fromEntries(drivers.map((d) => [String(d.id), driverName(d)])) }),
+    [drivers]
+  );
+
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Péages</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{tolls.length} dépense(s) enregistrée(s)</p>
+      <PageHeader
+        title="Péages"
+        description={`${tolls.length} dépense(s) enregistrée(s)`}
+        actions={
+          <Button onClick={openCreateDialog}>
+            <Plus className="size-4" />
+            Nouvelle dépense
+          </Button>
+        }
+      />
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Passages enregistrés" value={formatNumber(tolls.length)} icon={Landmark} />
+        <StatCard label="Montant total" value={formatMoney(totalAmount)} icon={Wallet} />
+        <StatCard label="Ce mois" value={formatMoney(totalThisMonth)} icon={CalendarDays} />
+        <StatCard
+          label="Via badge / télépéage"
+          value={formatNumber(badgeCount)}
+          hint={tolls.length ? `${Math.round((badgeCount / tolls.length) * 100)} % des passages` : undefined}
+          icon={CreditCard}
+        />
+      </div>
+
+      <Panel flush>
+        <Toolbar className="justify-between">
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground" />
+            <Input
+              placeholder="Rechercher un péage…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 pl-9"
+            />
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger
-              render={
-                <Button onClick={openCreateDialog} className="h-10 gap-2 rounded-xl px-5 shadow-md shadow-primary/20">
-                  <Plus className="h-4 w-4" />
+          <Select items={vehicleFilterItems} value={vehicleFilter} onValueChange={(v) => setVehicleFilter(v || "")}>
+            <SelectTrigger className="h-9 w-full sm:w-60">
+              <SelectValue placeholder="Tous les véhicules" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Tous les véhicules</SelectItem>
+              {vehicles.map((v) => (
+                <SelectItem key={v.id} value={String(v.id)}>
+                  {v.registration} — {v.brand} {v.model}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Toolbar>
+
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : filteredTolls.length === 0 ? (
+          <EmptyState
+            icon={Landmark}
+            title={hasFilters ? "Aucune dépense ne correspond" : "Aucune dépense de péage"}
+            description={hasFilters ? "Modifiez la recherche ou le filtre véhicule." : "Enregistrez un premier passage pour suivre les frais de péage."}
+            action={
+              !hasFilters ? (
+                <Button onClick={openCreateDialog}>
+                  <Plus className="size-4" />
                   Nouvelle dépense
                 </Button>
-              }
-            />
-            <DialogContent className="max-w-md sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{editingId ? "Modifier la dépense" : "Nouvelle dépense de péage"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Véhicule *</Label>
-                    <Select value={form.vehicle_id} onValueChange={(v) => { if (v) update("vehicle_id", v); }}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Sélectionner" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vehicles.map((v) => (
-                          <SelectItem key={v.id} value={String(v.id)}>
-                            {v.registration} — {v.brand} {v.model}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Conducteur</Label>
-                    <Select value={form.driver_id} onValueChange={(v) => update("driver_id", v || "")}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Aucun" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {drivers.map((d) => (
-                          <SelectItem key={d.id} value={String(d.id)}>
-                            {d.first_name} {d.last_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="toll_name">Nom du péage *</Label>
-                    <Input
-                      id="toll_name"
-                      required
-                      placeholder="Ex: Péage Autoroute A1"
-                      value={form.toll_name}
-                      onChange={(e) => update("toll_name", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Montant (FCFA) *</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      required
-                      value={form.amount}
-                      onChange={(e) => update("amount", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Méthode de paiement</Label>
-                    <Select value={form.payment_method} onValueChange={(v) => { if (v) update("payment_method", v); }}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(methodLabels).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="expense_date">Date *</Label>
-                    <Input
-                      id="expense_date"
-                      type="date"
-                      required
-                      value={form.expense_date}
-                      onChange={(e) => update("expense_date", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="mileage">Kilométrage</Label>
-                    <Input
-                      id="mileage"
-                      type="number"
-                      value={form.mileage}
-                      onChange={(e) => update("mileage", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="notes">Notes</Label>
-                    <Input
-                      id="notes"
-                      value={form.notes}
-                      onChange={(e) => update("notes", e.target.value)}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">
-                    Annuler
-                  </Button>
-                  <Button type="submit" disabled={saving} className="gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 shadow-lg shadow-primary/25">
-                    {saving ? "Enregistrement..." : "Enregistrer"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Péage</TableHead>
+                <TableHead>Véhicule</TableHead>
+                <TableHead className="hidden lg:table-cell">Conducteur</TableHead>
+                <TableHead className="hidden md:table-cell">Paiement</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTolls.map((toll) => {
+                const vehicle = vehicleById.get(toll.vehicle_id);
+                const driver = toll.driver_id ? driverById.get(toll.driver_id) : undefined;
+                return (
+                  <TableRow key={toll.id} className="cursor-pointer" onClick={() => openEditDialog(toll)}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground tabular">
+                      {formatDate(toll.expense_date, "short")}
+                    </TableCell>
+                    <TableCell className="font-medium">{toll.toll_name}</TableCell>
+                    <TableCell>
+                      {vehicle ? (
+                        <div className="flex items-center gap-2">
+                          <Plate value={vehicle.registration} size="sm" />
+                          <span className="hidden truncate text-muted-foreground xl:inline">
+                            {vehicle.brand} {vehicle.model}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Véhicule #{toll.vehicle_id}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground lg:table-cell">
+                      {driver ? driverName(driver) : "—"}
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground md:table-cell">
+                      {tollMethodLabels[toll.payment_method] ?? toll.payment_method}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular">{formatMoney(toll.amount)}</TableCell>
+                    <TableCell className="pr-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Supprimer la dépense"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(toll.id);
+                        }}
+                        className="text-subtle-foreground hover:text-danger"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Panel>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <Landmark className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total dépenses</p>
-                <p className="text-2xl font-bold">{tolls.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50">
-                <Wallet className="h-6 w-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Montant total</p>
-                <p className="text-2xl font-bold">{totalAmount.toLocaleString("fr-FR")} FCFA</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-                <Receipt className="h-6 w-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Ce mois</p>
-                <p className="text-2xl font-bold">{totalThisMonth.toLocaleString("fr-FR")} FCFA</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50">
-                <CreditCard className="h-6 w-6 text-violet-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Via badge / télépéage</p>
-                <p className="text-2xl font-bold">{badgeCount}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">Historique des péages</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Modifier la dépense" : "Nouvelle dépense de péage"}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Véhicule" required>
+                <Select items={vehicleItems} value={form.vehicle_id} onValueChange={(v) => { if (v) update("vehicle_id", v); }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sélectionner un véhicule" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vehicles.map((v) => (
+                      <SelectItem key={v.id} value={String(v.id)}>
+                        {v.registration} — {v.brand} {v.model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Conducteur">
+                <Select items={driverItems} value={form.driver_id} onValueChange={(v) => update("driver_id", v || "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Aucun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {drivers.map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.first_name} {d.last_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Nom du péage" htmlFor="toll_name" required className="sm:col-span-2">
                 <Input
-                  placeholder="Rechercher un péage..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-11 rounded-xl pl-10"
+                  id="toll_name"
+                  required
+                  placeholder="Ex : Péage Autoroute A1"
+                  value={form.toll_name}
+                  onChange={(e) => update("toll_name", e.target.value)}
                 />
-              </div>
-              <Select value={vehicleFilter} onValueChange={(v) => setVehicleFilter(v || "")}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Véhicule" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Tous les véhicules</SelectItem>
-                  {vehicles.map((v) => (
-                    <SelectItem key={v.id} value={String(v.id)}>
-                      {v.brand} {v.model} - {v.registration}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              </Field>
+              <Field label="Montant (FCFA)" htmlFor="amount" required>
+                <Input
+                  id="amount"
+                  type="number"
+                  required
+                  value={form.amount}
+                  onChange={(e) => update("amount", e.target.value)}
+                />
+              </Field>
+              <Field label="Moyen de paiement">
+                <Select items={tollMethodLabels} value={form.payment_method} onValueChange={(v) => { if (v) update("payment_method", v); }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(tollMethodLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Date" htmlFor="expense_date" required>
+                <Input
+                  id="expense_date"
+                  type="date"
+                  required
+                  value={form.expense_date}
+                  onChange={(e) => update("expense_date", e.target.value)}
+                />
+              </Field>
+              <Field label="Kilométrage" htmlFor="mileage">
+                <Input
+                  id="mileage"
+                  type="number"
+                  value={form.mileage}
+                  onChange={(e) => update("mileage", e.target.value)}
+                />
+              </Field>
+              <Field label="Notes" htmlFor="notes" className="sm:col-span-2">
+                <Textarea id="notes" rows={2} value={form.notes} onChange={(e) => update("notes", e.target.value)} />
+              </Field>
             </div>
-
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-xl" />
-                ))}
-              </div>
-            ) : filteredTolls.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                Aucune dépense de péage trouvée.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-3 font-medium">Péage</th>
-                      <th className="pb-3 font-medium">Véhicule</th>
-                      <th className="pb-3 font-medium">Méthode</th>
-                      <th className="pb-3 font-medium">Date</th>
-                      <th className="pb-3 font-medium text-right">Montant</th>
-                      <th className="pb-3 font-medium text-right"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTolls.map((toll) => {
-                      const vehicle = vehicles.find((v) => v.id === toll.vehicle_id);
-                      const method = methodBadges[toll.payment_method] ?? methodBadges.other;
-                      return (
-                        <tr
-                          key={toll.id}
-                          onClick={() => openEditDialog(toll)}
-                          className="cursor-pointer border-b last:border-0 transition-colors hover:bg-muted/40"
-                        >
-                          <td className="py-4 font-semibold">{toll.toll_name}</td>
-                          <td className="py-4">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Truck className="h-4 w-4" />
-                              {vehicle ? `${vehicle.brand} ${vehicle.model}` : `Véhicule #${toll.vehicle_id}`}
-                            </div>
-                          </td>
-                          <td className="py-4">
-                            <Badge className={cn("rounded-lg border-0 px-2.5 py-0.5 font-medium", method.bg, method.text)}>
-                              {methodLabels[toll.payment_method]}
-                            </Badge>
-                          </td>
-                          <td className="py-4 text-muted-foreground">
-                            {new Date(toll.expense_date).toLocaleDateString("fr-FR")}
-                          </td>
-                          <td className="py-4 text-right font-medium">
-                            {Number(toll.amount).toLocaleString("fr-FR")} FCFA
-                          </td>
-                          <td className="py-4 text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(toll.id);
-                              }}
-                              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

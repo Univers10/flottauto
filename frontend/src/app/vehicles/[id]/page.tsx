@@ -4,11 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Calendar,
   Car,
-  Droplets,
-  Euro,
+  ChevronRight,
+  ExternalLink,
   FileText,
   Fuel,
   Gauge,
@@ -20,95 +19,105 @@ import {
   Trash2,
   Upload,
   User,
+  Wallet,
   Wrench,
+  X,
+  Zap,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  DetailList,
+  EmptyState,
+  Field,
+  FormSection,
+  PageHeader,
+  Panel,
+  Plate,
+  StatCard,
+  StatusBadge,
+} from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
-import { api, uploadVehicleDocument, updateVehicleDocument, updateVehicle, listTollExpenses, createTollExpense, listFuelExpenses, createFuelExpense, deleteFuelExpense, uploadVehiclePhoto, deleteVehiclePhoto } from "@/lib/api";
+import {
+  api,
+  assetUrl,
+  uploadVehicleDocument,
+  updateVehicleDocument,
+  updateVehicle,
+  listTollExpenses,
+  createTollExpense,
+  listFuelExpenses,
+  createFuelExpense,
+  deleteFuelExpense,
+  uploadVehiclePhoto,
+  deleteVehiclePhoto,
+} from "@/lib/api";
+import {
+  documentTypeLabels,
+  energyLabels,
+  fuelLabels,
+  tollMethodLabels,
+  vehicleStatus,
+  vehicleTypeLabels,
+  workOrderStatus,
+  workOrderType,
+  type Tone,
+} from "@/lib/labels";
+import { formatDate, formatMoney, formatNumber, formatRelativeDays, fullName, initials } from "@/lib/format";
 import { toast } from "sonner";
-import type { Document, Driver, Vehicle, WorkOrder, VehicleStatus, VehicleType, EnergyType, TollExpense, TollPaymentMethod, FuelExpense, FuelType } from "@/types";
+import type {
+  Document,
+  Driver,
+  Vehicle,
+  WorkOrder,
+  VehicleStatus,
+  VehicleType,
+  EnergyType,
+  TollExpense,
+  TollPaymentMethod,
+  FuelExpense,
+  FuelType,
+} from "@/types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1").replace("/api/v1", "");
+const statusItems = Object.fromEntries(
+  (Object.keys(vehicleStatus) as VehicleStatus[]).map((s) => [s, vehicleStatus[s].label])
+) as Record<string, string>;
 
-const statusBadges: Record<VehicleStatus, { bg: string; text: string; label: string }> = {
-  available: { bg: "bg-emerald-50", text: "text-emerald-700", label: "Disponible" },
-  in_mission: { bg: "bg-blue-50", text: "text-blue-700", label: "En mission" },
-  in_maintenance: { bg: "bg-amber-50", text: "text-amber-700", label: "En maintenance" },
-  out_of_service: { bg: "bg-rose-50", text: "text-rose-700", label: "Hors service" },
-};
+const IMAGE_RE = /\.(jpg|jpeg|png|webp|gif)$/i;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const typeLabels: Record<string, string> = {
-  registration_card: "Carte grise",
-  insurance: "Assurance",
-  technical_control: "Contrôle technique",
-  vignette: "Vignette",
-  transport_authorization: "Autorisation de transport",
-  license: "Permis",
-  id_card: "Pièce d'identité",
-  medical: "Visite médicale",
-  other: "Autre",
-};
+/** Ton et libellé d'échéance d'un document. */
+function expiryState(expiry: string | null): { tone: Tone; label: string } | null {
+  if (!expiry) return null;
+  const date = new Date(expiry);
+  if (date.getTime() < Date.now()) return { tone: "danger", label: "Expiré" };
+  if (date <= new Date(Date.now() + 30 * DAY_MS)) return { tone: "warning", label: `Expire ${formatRelativeDays(expiry)}` };
+  return { tone: "neutral", label: `Jusqu'au ${formatDate(expiry, "short")}` };
+}
 
-const vehicleTypeLabels: Record<VehicleType, string> = {
-  car: "Voiture",
-  van: "Utilitaire",
-  truck: "Camion",
-  bus: "Bus",
-  motorcycle: "Moto",
-  other: "Autre",
-};
+function HeroFact({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="size-3.5 text-subtle-foreground" />
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-semibold tabular">{value}</p>
+    </div>
+  );
+}
 
-const energyLabels: Record<EnergyType, string> = {
-  diesel: "Diesel",
-  petrol: "Essence",
-  electric: "Électrique",
-  hybrid: "Hybride",
-  lpg: "GPL",
-  other: "Autre",
-};
-
-const statusLabels: Record<VehicleStatus, string> = {
-  available: "Disponible",
-  in_mission: "En mission",
-  in_maintenance: "En maintenance",
-  out_of_service: "Hors service",
-};
-
-const tollMethodLabels: Record<TollPaymentMethod, string> = {
-  cash: "Espèces",
-  card: "Carte",
-  badge: "Badge / Télépéage",
-  other: "Autre",
-};
-
-const fuelLabels: Record<FuelType, string> = {
-  diesel: "Diesel",
-  petrol: "Essence",
-  other: "Autre",
-};
+function CountChip({ value }: { value: number }) {
+  return <span className="rounded bg-muted px-1.5 text-[11px] font-medium text-muted-foreground tabular">{value}</span>;
+}
 
 export default function VehicleDetailPage() {
   const params = useParams<{ id: string }>();
@@ -122,6 +131,7 @@ export default function VehicleDetailPage() {
   const [tolls, setTolls] = useState<TollExpense[]>([]);
   const [fuelExpenses, setFuelExpenses] = useState<FuelExpense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<string>("info");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -507,339 +517,349 @@ export default function VehicleDetailPage() {
     [workOrders]
   );
 
-  const totalTollCost = useMemo(
-    () => tolls.reduce((sum, t) => sum + Number(t.amount || 0), 0),
-    [tolls]
-  );
+  const totalTollCost = useMemo(() => tolls.reduce((sum, t) => sum + Number(t.amount || 0), 0), [tolls]);
 
-  const totalFuelCost = useMemo(
-    () => fuelExpenses.reduce((sum, f) => sum + Number(f.amount || 0), 0),
-    [fuelExpenses]
-  );
+  const totalFuelCost = useMemo(() => fuelExpenses.reduce((sum, f) => sum + Number(f.amount || 0), 0), [fuelExpenses]);
 
-  const totalFuelLiters = useMemo(
-    () => fuelExpenses.reduce((sum, f) => sum + Number(f.liters || 0), 0),
-    [fuelExpenses]
+  const totalFuelLiters = useMemo(() => fuelExpenses.reduce((sum, f) => sum + Number(f.liters || 0), 0), [fuelExpenses]);
+
+  const driverItems = useMemo(
+    () => ({ "": "Aucun", ...Object.fromEntries(drivers.map((d) => [String(d.id), fullName(d)])) }),
+    [drivers]
   );
 
   if (loading || !vehicle) {
     return (
       <AppShell>
         <div className="space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-7 w-64" />
+          </div>
+          <Skeleton className="h-52 w-full rounded-xl" />
+          <div className="grid gap-6 xl:grid-cols-3">
+            <Skeleton className="h-96 w-full rounded-xl xl:col-span-2" />
+            <Skeleton className="h-64 w-full rounded-xl" />
+          </div>
         </div>
       </AppShell>
     );
   }
 
-  const status = statusBadges[vehicle.status];
+  const status = vehicleStatus[vehicle.status];
+  const photoUrl = assetUrl(vehicle.photo_url);
+  const vehicleName = `${vehicle.brand} ${vehicle.model}`;
+  const totalCost = totalMaintenanceCost + totalTollCost + totalFuelCost;
+  const typeLabel = vehicleTypeLabels[vehicle.vehicle_type] || vehicle.vehicle_type;
+  const energyLabel = energyLabels[vehicle.energy] || vehicle.energy;
+
+  function startEditing() {
+    setTab("info");
+    setEditingInfo(true);
+  }
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Link href="/vehicles">
-            <Button variant="ghost" size="icon" className="rounded-xl">
-              <ArrowLeft className="h-5 w-5" />
+      <PageHeader
+        title={vehicleName}
+        breadcrumb={[{ label: "Véhicules", href: "/vehicles" }, { label: vehicleName }]}
+        actions={
+          <>
+            <Link href={`/maintenance/new?vehicle_id=${vehicle.id}`} className={buttonVariants({ variant: "outline" })}>
+              <Wrench className="size-4" />
+              Nouvelle intervention
+            </Link>
+            <Button onClick={startEditing} disabled={editingInfo}>
+              <Pencil className="size-4" />
+              Modifier
             </Button>
-          </Link>
-          <h1 className="text-sm font-medium text-muted-foreground">Retour à la flotte</h1>
-        </div>
+          </>
+        }
+      />
 
-        <Card className="overflow-hidden rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <div className="grid gap-0 lg:grid-cols-[320px_1fr]">
-            <div className="relative h-56 overflow-hidden bg-gradient-to-br from-muted to-muted/60 lg:h-full">
-              {vehicle.photo_url ? (
-                <img
-                  src={vehicle.photo_url.startsWith("http") ? vehicle.photo_url : `${API_BASE_URL}${vehicle.photo_url}`}
-                  alt={`${vehicle.brand} ${vehicle.model}`}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                  <Car className="h-16 w-16 opacity-40" />
-                </div>
+      {/* ─────────── Hero ─────────── */}
+      <section className="overflow-hidden rounded-xl border bg-card shadow-card">
+        <div className="grid md:grid-cols-[300px_1fr]">
+          <div className="group relative h-52 border-b bg-surface-sunken md:h-full md:min-h-52 md:border-r md:border-b-0">
+            {photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoUrl} alt={vehicleName} className="absolute inset-0 size-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-subtle-foreground">
+                <Car className="size-10" />
+                <span className="text-xs">Aucune photo</span>
+              </div>
+            )}
+            <div className="absolute right-3 bottom-3 flex gap-2">
+              <label
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "cursor-pointer bg-card",
+                  photoUploading && "pointer-events-none opacity-70"
+                )}
+              >
+                {photoUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                {vehicle.photo_url ? "Changer" : "Ajouter une photo"}
+                <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} disabled={photoUploading} />
+              </label>
+              {vehicle.photo_url && (
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={handlePhotoDelete}
+                  className="bg-card text-muted-foreground hover:text-danger"
+                  title="Supprimer la photo"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               )}
-              <Badge className={cn("absolute top-4 right-4 rounded-lg border-0 px-3 py-1 font-medium", status.bg, status.text)}>
-                {status.label}
-              </Badge>
-              <div className="absolute bottom-4 right-4 flex gap-2">
-                <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl bg-card/90 px-4 text-sm font-medium text-foreground shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-card">
-                  {photoUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4 text-primary" />
-                  )}
-                  {vehicle.photo_url ? "Changer la photo" : "Ajouter une photo"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoUpload}
-                    disabled={photoUploading}
-                  />
-                </label>
-                {vehicle.photo_url && (
-                  <button
-                    onClick={handlePhotoDelete}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-card/90 text-rose-600 shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-rose-50"
-                    title="Supprimer la photo"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col justify-center gap-4 p-6">
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">
-                  {vehicle.brand} {vehicle.model}
-                </h1>
-                <p className="mt-1 text-sm text-muted-foreground">{vehicle.registration}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-4 py-2 text-sm">
-                  <Gauge className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{vehicle.mileage.toLocaleString("fr-FR")} km</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-4 py-2 text-sm capitalize">
-                  <Car className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{vehicle.vehicle_type}</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-4 py-2 text-sm capitalize">
-                  <Wrench className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{vehicle.energy}</span>
-                </div>
-                {driver && (
-                  <div className="flex items-center gap-2 rounded-xl bg-muted/40 px-4 py-2 text-sm">
-                    <User className="h-4 w-4 text-primary" />
-                    <span className="font-semibold">{driver.first_name} {driver.last_name}</span>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
-        </Card>
 
-        <Tabs defaultValue="info" className="space-y-5">
-          <TabsList className="h-12 flex-wrap rounded-2xl bg-muted/60 p-1">
-            <TabsTrigger value="info" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Informations
-            </TabsTrigger>
-            <TabsTrigger value="documents" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Documents ({documents.length})
-            </TabsTrigger>
-            <TabsTrigger value="driver" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Chauffeur
-            </TabsTrigger>
-            <TabsTrigger value="maintenance" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Maintenance ({workOrders.length})
-            </TabsTrigger>
-            <TabsTrigger value="tolls" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Péages ({tolls.length})
-            </TabsTrigger>
-            <TabsTrigger value="fuel" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Carburant ({fuelExpenses.length})
-            </TabsTrigger>
-            <TabsTrigger value="costs" className="rounded-xl px-4 py-2 text-sm data-[state=active]:bg-card data-[state=active]:shadow-sm">
-              Coûts
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-col justify-between gap-6 p-6">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Plate value={vehicle.registration} size="lg" />
+                <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight">{vehicleName}</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {typeLabel} · {energyLabel}
+                  {vehicle.year ? ` · ${vehicle.year}` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-5 sm:grid-cols-4">
+              <HeroFact icon={Gauge} label="Kilométrage" value={formatNumber(vehicle.mileage, "km")} />
+              <HeroFact icon={Calendar} label="Année" value={vehicle.year ?? "—"} />
+              <HeroFact icon={Zap} label="Énergie" value={energyLabel} />
+              <HeroFact icon={User} label="Chauffeur" value={driver ? fullName(driver) : "Non affecté"} />
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <TabsContent value="info">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="text-lg font-semibold">Détails du véhicule</CardTitle>
-                {!editingInfo ? (
-                  <Button variant="outline" onClick={() => setEditingInfo(true)} className="h-10 gap-2 rounded-xl px-4">
-                    <Pencil className="h-4 w-4" />
-                    Modifier
-                  </Button>
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                {!editingInfo ? (
-                  <>
-                    <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                      {[
-                        { label: "Immatriculation", value: vehicle.registration },
-                        { label: "Marque / Modèle", value: `${vehicle.brand} ${vehicle.model}` },
-                        { label: "VIN", value: vehicle.vin || "—" },
+      {/* ─────────── Corps ─────────── */}
+      <div className="mt-6 grid items-start gap-6 xl:grid-cols-3">
+        <div className="min-w-0 xl:col-span-2">
+          <Tabs value={tab} onValueChange={(v) => setTab(String(v))} className="gap-4">
+            <div className="no-scrollbar overflow-x-auto border-b">
+              <TabsList variant="line" className="h-10 gap-1 p-0">
+                <TabsTrigger value="info" className="px-2.5">
+                  Informations
+                </TabsTrigger>
+                <TabsTrigger value="documents" className="px-2.5">
+                  Documents <CountChip value={documents.length} />
+                </TabsTrigger>
+                <TabsTrigger value="driver" className="px-2.5">
+                  Chauffeur
+                </TabsTrigger>
+                <TabsTrigger value="maintenance" className="px-2.5">
+                  Maintenance <CountChip value={workOrders.length} />
+                </TabsTrigger>
+                <TabsTrigger value="tolls" className="px-2.5">
+                  Péages <CountChip value={tolls.length} />
+                </TabsTrigger>
+                <TabsTrigger value="fuel" className="px-2.5">
+                  Carburant <CountChip value={fuelExpenses.length} />
+                </TabsTrigger>
+                <TabsTrigger value="costs" className="px-2.5">
+                  Coûts
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* ── Informations ── */}
+            <TabsContent value="info">
+              {!editingInfo ? (
+                <Panel
+                  title="Détails du véhicule"
+                  actions={
+                    <Button variant="outline" size="sm" onClick={() => setEditingInfo(true)}>
+                      <Pencil className="size-3.5" />
+                      Modifier
+                    </Button>
+                  }
+                >
+                  <div className="grid gap-x-10 gap-y-2.5 md:grid-cols-2">
+                    <DetailList
+                      items={[
+                        { label: "Immatriculation", value: <Plate value={vehicle.registration} size="sm" /> },
+                        { label: "Marque", value: vehicle.brand },
+                        { label: "Modèle", value: vehicle.model },
+                        { label: "VIN", value: vehicle.vin ? <span className="font-mono text-xs">{vehicle.vin}</span> : "—" },
                         { label: "Année", value: vehicle.year || "—" },
-                        { label: "Type", value: vehicleTypeLabels[vehicle.vehicle_type] || vehicle.vehicle_type },
-                        { label: "Énergie", value: energyLabels[vehicle.energy] || vehicle.energy },
-                        { label: "Statut", value: statusLabels[vehicle.status] || vehicle.status },
-                        { label: "Kilométrage", value: `${vehicle.mileage.toLocaleString()} km` },
-                        {
-                          label: "Mise en circulation",
-                          value: vehicle.first_registration_date
-                            ? new Date(vehicle.first_registration_date).toLocaleDateString("fr-FR")
-                            : "—",
-                        },
-                        {
-                          label: "Prix d'achat",
-                          value: vehicle.purchase_price
-                            ? `${Number(vehicle.purchase_price).toLocaleString("fr-FR")} FCFA`
-                            : "—",
-                        },
-                      ].map((item) => (
-                        <div key={item.label} className="rounded-xl bg-muted/40 p-3">
-                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
-                          <dd className="mt-1 text-sm font-semibold capitalize">{item.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {vehicle.notes && (
-                      <div className="mt-6 rounded-xl bg-muted/40 p-4">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</dt>
-                        <dd className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{vehicle.notes}</dd>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      saveVehicleInfo();
-                    }}
-                    className="space-y-5"
-                  >
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="v-registration">Immatriculation *</Label>
-                        <Input
-                          id="v-registration"
-                          required
-                          value={infoForm.registration}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, registration: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-vin">VIN</Label>
-                        <Input id="v-vin" value={infoForm.vin} onChange={(e) => setInfoForm((p) => ({ ...p, vin: e.target.value }))} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-brand">Marque *</Label>
-                        <Input
-                          id="v-brand"
-                          required
-                          value={infoForm.brand}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, brand: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-model">Modèle *</Label>
-                        <Input
-                          id="v-model"
-                          required
-                          value={infoForm.model}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, model: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-year">Année</Label>
-                        <Input
-                          id="v-year"
-                          type="number"
-                          value={infoForm.year}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, year: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-type">Type</Label>
-                        <Select
-                          value={infoForm.vehicle_type}
-                          onValueChange={(v) => setInfoForm((p) => ({ ...p, vehicle_type: (v || "car") as VehicleType }))}
-                        >
-                          <SelectTrigger id="v-type">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(vehicleTypeLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-energy">Énergie</Label>
-                        <Select
-                          value={infoForm.energy}
-                          onValueChange={(v) => setInfoForm((p) => ({ ...p, energy: (v || "diesel") as EnergyType }))}
-                        >
-                          <SelectTrigger id="v-energy">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(energyLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-status">Statut</Label>
-                        <Select
-                          value={infoForm.status}
-                          onValueChange={(v) => setInfoForm((p) => ({ ...p, status: (v || "available") as VehicleStatus }))}
-                        >
-                          <SelectTrigger id="v-status">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(statusLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-mileage">Kilométrage</Label>
-                        <Input
-                          id="v-mileage"
-                          type="number"
-                          value={infoForm.mileage}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, mileage: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-first-reg">Mise en circulation</Label>
-                        <Input
-                          id="v-first-reg"
-                          type="date"
-                          value={infoForm.first_registration_date}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, first_registration_date: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="v-price">Prix d&apos;achat (FCFA)</Label>
-                        <Input
-                          id="v-price"
-                          type="number"
-                          value={infoForm.purchase_price}
-                          onChange={(e) => setInfoForm((p) => ({ ...p, purchase_price: e.target.value }))}
-                        />
-                      </div>
+                      ]}
+                    />
+                    <DetailList
+                      className="border-t pt-2.5 md:border-t-0 md:pt-0"
+                      items={[
+                        { label: "Type", value: typeLabel },
+                        { label: "Énergie", value: energyLabel },
+                        { label: "Statut", value: <StatusBadge tone={status.tone}>{status.label}</StatusBadge> },
+                        { label: "Kilométrage", value: formatNumber(vehicle.mileage, "km") },
+                        { label: "Mise en circulation", value: formatDate(vehicle.first_registration_date) },
+                        { label: "Prix d'achat", value: vehicle.purchase_price ? formatMoney(vehicle.purchase_price) : "—" },
+                      ]}
+                    />
+                  </div>
+                  {vehicle.notes && (
+                    <div className="mt-5 rounded-lg border bg-surface-sunken p-4">
+                      <p className="text-xs font-medium text-muted-foreground">Notes</p>
+                      <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap">{vehicle.notes}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="v-notes">Notes</Label>
-                      <textarea
-                        id="v-notes"
-                        value={infoForm.notes}
-                        onChange={(e) => setInfoForm((p) => ({ ...p, notes: e.target.value }))}
-                        rows={4}
-                        className="w-full rounded-xl border border-border/60 bg-muted/50 px-3.5 py-2 text-base outline-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-                      />
+                  )}
+                </Panel>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    saveVehicleInfo();
+                  }}
+                >
+                  <Panel title="Modifier le véhicule" description="Les champs marqués d'un astérisque sont obligatoires.">
+                    <div className="divide-y">
+                      <FormSection title="Identification">
+                        <Field label="Immatriculation" htmlFor="v-registration" required>
+                          <Input
+                            id="v-registration"
+                            required
+                            className="font-mono uppercase"
+                            value={infoForm.registration}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, registration: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="VIN" htmlFor="v-vin">
+                          <Input
+                            id="v-vin"
+                            className="font-mono"
+                            value={infoForm.vin}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, vin: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Marque" htmlFor="v-brand" required>
+                          <Input
+                            id="v-brand"
+                            required
+                            value={infoForm.brand}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, brand: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Modèle" htmlFor="v-model" required>
+                          <Input
+                            id="v-model"
+                            required
+                            value={infoForm.model}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, model: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Année" htmlFor="v-year">
+                          <Input
+                            id="v-year"
+                            type="number"
+                            value={infoForm.year}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, year: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Mise en circulation" htmlFor="v-first-reg">
+                          <Input
+                            id="v-first-reg"
+                            type="date"
+                            value={infoForm.first_registration_date}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, first_registration_date: e.target.value }))}
+                          />
+                        </Field>
+                      </FormSection>
+
+                      <FormSection title="Caractéristiques">
+                        <Field label="Type" htmlFor="v-type">
+                          <Select
+                            items={vehicleTypeLabels}
+                            value={infoForm.vehicle_type}
+                            onValueChange={(v) => setInfoForm((p) => ({ ...p, vehicle_type: (v || "car") as VehicleType }))}
+                          >
+                            <SelectTrigger id="v-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(vehicleTypeLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Énergie" htmlFor="v-energy">
+                          <Select
+                            items={energyLabels}
+                            value={infoForm.energy}
+                            onValueChange={(v) => setInfoForm((p) => ({ ...p, energy: (v || "diesel") as EnergyType }))}
+                          >
+                            <SelectTrigger id="v-energy">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(energyLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Statut" htmlFor="v-status">
+                          <Select
+                            items={statusItems}
+                            value={infoForm.status}
+                            onValueChange={(v) => setInfoForm((p) => ({ ...p, status: (v || "available") as VehicleStatus }))}
+                          >
+                            <SelectTrigger id="v-status">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(statusItems).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Kilométrage (km)" htmlFor="v-mileage">
+                          <Input
+                            id="v-mileage"
+                            type="number"
+                            className="tabular"
+                            value={infoForm.mileage}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, mileage: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Prix d'achat (FCFA)" htmlFor="v-price">
+                          <Input
+                            id="v-price"
+                            type="number"
+                            className="tabular"
+                            value={infoForm.purchase_price}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, purchase_price: e.target.value }))}
+                          />
+                        </Field>
+                      </FormSection>
+
+                      <FormSection title="Notes">
+                        <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2">
+                          <Textarea
+                            id="v-notes"
+                            rows={4}
+                            value={infoForm.notes}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInfoForm((p) => ({ ...p, notes: e.target.value }))}
+                          />
+                        </Field>
+                      </FormSection>
                     </div>
-                    <div className="flex justify-end gap-3">
+
+                    <div className="-mx-5 mt-6 -mb-5 flex justify-end gap-2 border-t bg-surface-sunken px-5 py-4">
                       <Button
                         type="button"
                         variant="outline"
@@ -847,110 +867,98 @@ export default function VehicleDetailPage() {
                           applyVehicleToInfoForm(vehicle);
                           setEditingInfo(false);
                         }}
-                        className="h-11 rounded-xl border-border/60 px-5"
                       >
                         Annuler
                       </Button>
-                      <Button
-                        type="submit"
-                        disabled={savingInfo}
-                        className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25"
-                      >
-                        <Save className="h-4 w-4" />
-                        {savingInfo ? "Sauvegarde..." : "Enregistrer"}
+                      <Button type="submit" disabled={savingInfo}>
+                        {savingInfo ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                        {savingInfo ? "Sauvegarde…" : "Enregistrer"}
                       </Button>
                     </div>
-                  </form>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  </Panel>
+                </form>
+              )}
+            </TabsContent>
 
-          <TabsContent value="documents">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <FileText className="h-5 w-5 text-primary" />
-                  Documents
-                </CardTitle>
-                <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-                  <DialogTrigger
-                    render={
-                      <Button className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
-                        <Upload className="h-4 w-4" />
-                        Ajouter
-                      </Button>
-                    }
-                  />
-                  <DialogContent className="rounded-2xl border-none p-6 sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="text-lg font-semibold">Nouveau document</DialogTitle>
-                    </DialogHeader>
-                    <form key={uploadFormKey} onSubmit={handleUpload} className="space-y-4 pt-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="docName">Nom</Label>
-                        <Input id="docName" name="name" placeholder="Carte grise 2026 (optionnel si plusieurs fichiers)" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="docType">Type</Label>
-                        <Select value={docType} onValueChange={(v) => setDocType(v || "registration_card")}>
-                          <SelectTrigger id="docType">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(typeLabels).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="issueDate">Date d&apos;émission</Label>
-                          <Input id="issueDate" name="issue_date" type="date" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="expiryDate">Date d&apos;expiration</Label>
-                          <Input id="expiryDate" name="expiry_date" type="date" />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="files">Fichiers</Label>
-                        <Input id="files" name="files" type="file" multiple required />
-                        <p className="text-xs text-muted-foreground">Vous pouvez sélectionner plusieurs documents en même temps.</p>
-                      </div>
-                      <div className="flex justify-end gap-3 pt-2">
-                        <Button type="button" variant="outline" onClick={() => setUploadOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
-                          Annuler
+            {/* ── Documents ── */}
+            <TabsContent value="documents" className="space-y-4">
+              <Panel
+                title="Documents"
+                description="Carte grise, assurance, contrôle technique et autres pièces du véhicule."
+                actions={
+                  <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+                    <DialogTrigger
+                      render={
+                        <Button size="sm">
+                          <Upload className="size-3.5" />
+                          Ajouter
                         </Button>
-                        <Button type="submit" disabled={uploading} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                          {uploading ? "Envoi..." : "Enregistrer"}
-                        </Button>
-                      </div>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-
+                      }
+                    />
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Nouveau document</DialogTitle>
+                      </DialogHeader>
+                      <form key={uploadFormKey} onSubmit={handleUpload} className="space-y-4">
+                        <Field label="Nom" htmlFor="docName" hint="Facultatif si vous envoyez plusieurs fichiers.">
+                          <Input id="docName" name="name" placeholder="Carte grise 2026" />
+                        </Field>
+                        <Field label="Type" htmlFor="docType">
+                          <Select items={documentTypeLabels} value={docType} onValueChange={(v) => setDocType(v || "registration_card")}>
+                            <SelectTrigger id="docType">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(documentTypeLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Field label="Date d'émission" htmlFor="issueDate">
+                            <Input id="issueDate" name="issue_date" type="date" />
+                          </Field>
+                          <Field label="Date d'expiration" htmlFor="expiryDate">
+                            <Input id="expiryDate" name="expiry_date" type="date" />
+                          </Field>
+                        </div>
+                        <Field label="Fichiers" htmlFor="files" required hint="Vous pouvez sélectionner plusieurs documents en même temps.">
+                          <Input id="files" name="files" type="file" multiple required />
+                        </Field>
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>
+                            Annuler
+                          </Button>
+                          <Button type="submit" disabled={uploading}>
+                            {uploading && <Loader2 className="size-4 animate-spin" />}
+                            {uploading ? "Envoi…" : "Enregistrer"}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                }
+              >
                 <Dialog open={docEditOpen} onOpenChange={setDocEditOpen}>
-                  <DialogContent className="rounded-2xl border-none p-6 sm:max-w-md">
+                  <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle className="text-lg font-semibold">Modifier le document</DialogTitle>
+                      <DialogTitle>Modifier le document</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={handleDocEditSubmit} className="space-y-4 pt-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-doc-name">Nom</Label>
+                    <form onSubmit={handleDocEditSubmit} className="space-y-4">
+                      <Field label="Nom" htmlFor="edit-doc-name" required>
                         <Input
                           id="edit-doc-name"
                           required
                           value={docEditForm.name}
                           onChange={(e) => setDocEditForm((p) => ({ ...p, name: e.target.value }))}
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-doc-type">Type</Label>
+                      </Field>
+                      <Field label="Type" htmlFor="edit-doc-type">
                         <Select
+                          items={documentTypeLabels}
                           value={docEditForm.document_type}
                           onValueChange={(v) => setDocEditForm((p) => ({ ...p, document_type: v || "other" }))}
                         >
@@ -958,36 +966,33 @@ export default function VehicleDetailPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {Object.entries(typeLabels).map(([value, label]) => (
+                            {Object.entries(documentTypeLabels).map(([value, label]) => (
                               <SelectItem key={value} value={value}>
                                 {label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
+                      </Field>
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-doc-issue">Date d&apos;émission</Label>
+                        <Field label="Date d'émission" htmlFor="edit-doc-issue">
                           <Input
                             id="edit-doc-issue"
                             type="date"
                             value={docEditForm.issue_date}
                             onChange={(e) => setDocEditForm((p) => ({ ...p, issue_date: e.target.value }))}
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-doc-expiry">Date d&apos;expiration</Label>
+                        </Field>
+                        <Field label="Date d'expiration" htmlFor="edit-doc-expiry">
                           <Input
                             id="edit-doc-expiry"
                             type="date"
                             value={docEditForm.expiry_date}
                             onChange={(e) => setDocEditForm((p) => ({ ...p, expiry_date: e.target.value }))}
                           />
-                        </div>
+                        </Field>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-doc-reminder">Rappel (jours avant)</Label>
+                      <Field label="Rappel (jours avant l'échéance)" htmlFor="edit-doc-reminder">
                         <Input
                           id="edit-doc-reminder"
                           type="number"
@@ -995,189 +1000,193 @@ export default function VehicleDetailPage() {
                           value={docEditForm.reminder_days}
                           onChange={(e) => setDocEditForm((p) => ({ ...p, reminder_days: e.target.value }))}
                         />
-                      </div>
-                      <div className="flex justify-end gap-3 pt-2">
-                        <Button type="button" variant="outline" onClick={() => setDocEditOpen(false)} className="h-11 rounded-xl border-border/60 px-5">
+                      </Field>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setDocEditOpen(false)}>
                           Annuler
                         </Button>
-                        <Button type="submit" disabled={savingDocEdit} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                          <Save className="h-4 w-4" />
-                          {savingDocEdit ? "Sauvegarde..." : "Enregistrer"}
+                        <Button type="submit" disabled={savingDocEdit}>
+                          {savingDocEdit ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                          {savingDocEdit ? "Sauvegarde…" : "Enregistrer"}
                         </Button>
-                      </div>
+                      </DialogFooter>
                     </form>
                   </DialogContent>
                 </Dialog>
-              </CardHeader>
-              <CardContent>
+
                 {documents.length === 0 ? (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucun document enregistré.
-                  </div>
+                  <EmptyState
+                    icon={FileText}
+                    title="Aucun document"
+                    description="Ajoutez la carte grise, l'assurance ou le contrôle technique pour suivre leurs échéances."
+                    className="py-10"
+                  />
                 ) : (
-                  <>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {documents.map((doc) => {
-                        const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(doc.file_url || "");
-                        const fullUrl = doc.file_url?.startsWith("http") ? doc.file_url : `${API_BASE_URL}${doc.file_url}`;
-                        const expiringSoon = doc.expiry_date && new Date(doc.expiry_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-                        return (
-                          <Card
-                            key={doc.id}
-                            onClick={() => openDoc(doc)}
-                            className={cn(
-                              "group cursor-pointer overflow-hidden rounded-2xl border bg-card shadow-sm shadow-black/5 transition-all hover:-translate-y-1 hover:shadow-lg",
-                              selectedDoc?.id === doc.id ? "border-primary ring-1 ring-primary" : "border-border/60",
-                            )}
-                          >
-                            <div className="relative h-40 overflow-hidden bg-gradient-to-br from-muted to-muted/60">
-                              {isImage && fullUrl ? (
-                                <img src={fullUrl} alt={doc.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                              ) : (
-                                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                                  <FileText className="h-12 w-12 opacity-40" />
-                                  <span className="text-xs font-medium uppercase tracking-wide">{typeLabels[doc.document_type] || doc.document_type}</span>
-                                </div>
-                              )}
-                              {doc.expiry_date && (
-                                <span
-                                  className={cn(
-                                    "absolute top-3 right-3 rounded-lg px-2.5 py-0.5 text-xs font-medium",
-                                    expiringSoon ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700",
-                                  )}
-                                >
-                                  {new Date(doc.expiry_date).toLocaleDateString("fr-FR")}
-                                </span>
-                              )}
-                            </div>
-                            <CardContent className="space-y-1 p-4">
-                              <h3 className="truncate font-semibold">{doc.name}</h3>
-                              <p className="text-sm text-muted-foreground">{typeLabels[doc.document_type] || doc.document_type}</p>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-
-                    {selectedDoc && (() => {
-                      const fullUrl = selectedDoc.file_url?.startsWith("http") ? selectedDoc.file_url : `${API_BASE_URL}${selectedDoc.file_url}`;
-                      const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(selectedDoc.file_url || "");
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {documents.map((doc) => {
+                      const fileUrl = assetUrl(doc.file_url);
+                      const isImage = IMAGE_RE.test(doc.file_url || "");
+                      const expiry = expiryState(doc.expiry_date);
+                      const selected = selectedDoc?.id === doc.id;
                       return (
-                        <Card className="mt-6 overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm shadow-black/5">
-                          <div className="grid gap-6 p-6 lg:grid-cols-[1fr_1.2fr]">
-                            <div className="relative h-80 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/60 lg:h-auto">
-                              {isImage && fullUrl ? (
-                                <img src={fullUrl} alt={selectedDoc.name} className="h-full w-full object-contain" />
-                              ) : (
-                                <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                                  <FileText className="h-24 w-24 opacity-40" />
-                                  <span className="text-sm font-medium">Aperçu non disponible</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="space-y-4">
-                              <div>
-                                <h2 className="text-2xl font-bold">{selectedDoc.name}</h2>
-                                <p className="text-base text-muted-foreground">{typeLabels[selectedDoc.document_type] || selectedDoc.document_type}</p>
+                        <button
+                          type="button"
+                          key={doc.id}
+                          onClick={() => openDoc(doc)}
+                          className={cn(
+                            "group overflow-hidden rounded-xl border bg-card text-left transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-pop focus-visible:ring-3 focus-visible:ring-primary/25 focus-visible:outline-none",
+                            selected && "border-primary ring-1 ring-primary"
+                          )}
+                        >
+                          <div className="relative h-32 overflow-hidden border-b bg-surface-sunken">
+                            {isImage && fileUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={fileUrl} alt={doc.name} className="size-full object-cover" />
+                            ) : (
+                              <div className="flex size-full items-center justify-center text-subtle-foreground">
+                                <FileText className="size-8" />
                               </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="rounded-xl bg-muted/40 p-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Échéance</p>
-                                  <p className="mt-1 font-semibold">
-                                    {selectedDoc.expiry_date ? new Date(selectedDoc.expiry_date).toLocaleDateString("fr-FR") : "—"}
-                                  </p>
-                                </div>
-                                <div className="rounded-xl bg-muted/40 p-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Date d&apos;émission</p>
-                                  <p className="mt-1 font-semibold">
-                                    {selectedDoc.issue_date ? new Date(selectedDoc.issue_date).toLocaleDateString("fr-FR") : "—"}
-                                  </p>
-                                </div>
-                                <div className="rounded-xl bg-muted/40 p-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Rappel</p>
-                                  <p className="mt-1 font-semibold">{selectedDoc.reminder_days} jours avant</p>
-                                </div>
-                                <div className="rounded-xl bg-muted/40 p-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Fichier</p>
-                                  <a href={fullUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-primary hover:underline">
-                                    Télécharger / Ouvrir
-                                  </a>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap justify-end gap-3 pt-2">
-                                <Button variant="outline" onClick={() => setSelectedDoc(null)} className="h-11 rounded-xl px-5">
-                                  Fermer
-                                </Button>
-                                <Button variant="outline" onClick={() => openDocEdit(selectedDoc)} className="h-11 gap-2 rounded-xl px-5">
-                                  <Pencil className="h-4 w-4" />
-                                  Modifier
-                                </Button>
-                                <Button variant="destructive" onClick={() => { deleteDoc(selectedDoc); setSelectedDoc(null); }} className="h-11 gap-2 rounded-xl px-5">
-                                  <Trash2 className="h-4 w-4" />
-                                  Supprimer
-                                </Button>
-                              </div>
-                            </div>
+                            )}
+                            {expiry && (
+                              <StatusBadge tone={expiry.tone} className="absolute top-2.5 right-2.5 bg-card">
+                                {expiry.label}
+                              </StatusBadge>
+                            )}
                           </div>
-                        </Card>
+                          <div className="space-y-0.5 px-3.5 py-3">
+                            <p className="truncate text-sm font-medium">{doc.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {documentTypeLabels[doc.document_type] || doc.document_type}
+                            </p>
+                          </div>
+                        </button>
                       );
-                    })()}
-                  </>
+                    })}
+                  </div>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </Panel>
 
-          <TabsContent value="driver">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <User className="h-5 w-5 text-primary" />
-                  Chauffeur affecté
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+              {selectedDoc &&
+                (() => {
+                  const fileUrl = assetUrl(selectedDoc.file_url);
+                  const isImage = IMAGE_RE.test(selectedDoc.file_url || "");
+                  const expiry = expiryState(selectedDoc.expiry_date);
+                  return (
+                    <Panel
+                      title={selectedDoc.name}
+                      description={documentTypeLabels[selectedDoc.document_type] || selectedDoc.document_type}
+                      actions={
+                        <Button variant="ghost" size="icon-sm" onClick={() => setSelectedDoc(null)} title="Fermer">
+                          <X className="size-4" />
+                        </Button>
+                      }
+                    >
+                      <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+                        <div className="relative flex h-72 items-center justify-center overflow-hidden rounded-lg border bg-surface-sunken">
+                          {isImage && fileUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={fileUrl} alt={selectedDoc.name} className="size-full object-contain" />
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-subtle-foreground">
+                              <FileText className="size-10" />
+                              <span className="text-xs">Aperçu non disponible</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col justify-between gap-6">
+                          <DetailList
+                            items={[
+                              {
+                                label: "Échéance",
+                                value: expiry ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    {formatDate(selectedDoc.expiry_date)}
+                                    {expiry.tone !== "neutral" && <StatusBadge tone={expiry.tone}>{expiry.label}</StatusBadge>}
+                                  </span>
+                                ) : (
+                                  "—"
+                                ),
+                              },
+                              { label: "Date d'émission", value: formatDate(selectedDoc.issue_date) },
+                              { label: "Rappel", value: `${selectedDoc.reminder_days} jours avant` },
+                              {
+                                label: "Fichier",
+                                value: fileUrl ? (
+                                  <a
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                                  >
+                                    Ouvrir
+                                    <ExternalLink className="size-3.5" />
+                                  </a>
+                                ) : (
+                                  "—"
+                                ),
+                              },
+                            ]}
+                          />
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              className="text-danger hover:text-danger"
+                              onClick={() => {
+                                deleteDoc(selectedDoc);
+                                setSelectedDoc(null);
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                              Supprimer
+                            </Button>
+                            <Button variant="outline" onClick={() => openDocEdit(selectedDoc)}>
+                              <Pencil className="size-4" />
+                              Modifier
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </Panel>
+                  );
+                })()}
+            </TabsContent>
+
+            {/* ── Chauffeur ── */}
+            <TabsContent value="driver">
+              <Panel title="Chauffeur affecté" description="Conducteur attitré de ce véhicule.">
                 {driver ? (
-                  <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-blue-600 text-3xl font-bold text-primary-foreground">
-                      {driver.first_name[0]}{driver.last_name[0]}
-                    </div>
-                    <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nom</dt>
-                        <dd className="mt-1 text-sm font-semibold">{driver.first_name} {driver.last_name}</dd>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</dt>
-                        <dd className="mt-1 text-sm font-semibold">{driver.email || "—"}</dd>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Téléphone</dt>
-                        <dd className="mt-1 text-sm font-semibold">{driver.phone || "—"}</dd>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Permis</dt>
-                        <dd className="mt-1 text-sm font-semibold">{driver.license_number || "—"}</dd>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catégories</dt>
-                        <dd className="mt-1 text-sm font-semibold">{driver.license_categories || "—"}</dd>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Expiration permis</dt>
-                        <dd className="mt-1 text-sm font-semibold">
-                          {driver.license_expiry ? new Date(driver.license_expiry).toLocaleDateString("fr-FR") : "—"}
-                        </dd>
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+                    <div className="flex items-center gap-3 sm:w-52 sm:flex-col sm:items-start">
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary-subtle text-lg font-semibold text-primary">
+                        {initials(driver.first_name, driver.last_name)}
+                      </span>
+                      <div className="min-w-0">
+                        <Link href={`/drivers/${driver.id}`} className="block truncate font-medium hover:underline">
+                          {fullName(driver)}
+                        </Link>
+                        <p className="truncate text-xs text-muted-foreground">{driver.email || "Pas d'e-mail"}</p>
                       </div>
                     </div>
+                    <DetailList
+                      className="flex-1"
+                      items={[
+                        { label: "Téléphone", value: driver.phone || "—" },
+                        { label: "N° de permis", value: driver.license_number || "—" },
+                        { label: "Catégories", value: driver.license_categories || "—" },
+                        { label: "Expiration du permis", value: formatDate(driver.license_expiry) },
+                      ]}
+                    />
                   </div>
                 ) : (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucun chauffeur affecté.
-                  </div>
+                  <EmptyState
+                    icon={User}
+                    title="Aucun chauffeur affecté"
+                    description="Choisissez un conducteur ci-dessous pour l'affecter à ce véhicule."
+                    className="py-8"
+                  />
                 )}
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Select value={selectedDriverId} onValueChange={(v) => setSelectedDriverId(v || "")}>
+                <div className="-mx-5 mt-5 -mb-5 flex flex-col gap-2 border-t bg-surface-sunken px-5 py-4 sm:flex-row sm:items-center">
+                  <Select items={driverItems} value={selectedDriverId} onValueChange={(v) => setSelectedDriverId(v || "")}>
                     <SelectTrigger className="sm:w-72">
                       <SelectValue placeholder="Choisir un chauffeur" />
                     </SelectTrigger>
@@ -1190,516 +1199,496 @@ export default function VehicleDetailPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={() => assignDriver(selectedDriverId)} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                    <Plus className="h-4 w-4" />
+                  <Button onClick={() => assignDriver(selectedDriverId)}>
+                    <Plus className="size-4" />
                     Affecter
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </Panel>
+            </TabsContent>
 
-          <TabsContent value="maintenance">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Wrench className="h-5 w-5 text-primary" />
-                  Ordres de travail
-                </CardTitle>
-                <Button onClick={() => router.push(`/maintenance/new?vehicle_id=${vehicle.id}`)} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
-                  <Plus className="h-4 w-4" />
-                  Nouvelle intervention
-                </Button>
-              </CardHeader>
-              <CardContent>
+            {/* ── Maintenance ── */}
+            <TabsContent value="maintenance">
+              <Panel
+                flush
+                title="Ordres de travail"
+                description="Interventions préventives et curatives sur ce véhicule."
+                actions={
+                  <Link href={`/maintenance/new?vehicle_id=${vehicle.id}`} className={buttonVariants({ size: "sm" })}>
+                    <Plus className="size-3.5" />
+                    Nouvelle intervention
+                  </Link>
+                }
+              >
                 {workOrders.length === 0 ? (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucun ordre de travail.
-                  </div>
+                  <EmptyState icon={Wrench} title="Aucun ordre de travail" description="Les interventions sur ce véhicule apparaîtront ici." />
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {workOrders.map((wo) => (
-                      <div key={wo.id} className="rounded-2xl border border-border/60 p-4 transition-colors hover:bg-muted/40">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-semibold">{wo.title}</h3>
-                          <Badge variant="outline" className="rounded-lg capitalize">
-                            {wo.status}
-                          </Badge>
-                        </div>
-                        <p className="mt-2 text-sm text-muted-foreground line-clamp-2">{wo.description || "—"}</p>
-                        <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2 py-1">
-                            <Calendar className="h-4 w-4" />
-                            {wo.type === "preventive" ? "Préventif" : "Curatif"}
-                          </span>
-                          {wo.total_cost && (
-                            <span className="font-medium text-foreground">
-                              {Number(wo.total_cost).toLocaleString("fr-FR")} FCFA
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Intervention</TableHead>
+                        <TableHead className="hidden sm:table-cell">Type</TableHead>
+                        <TableHead>Statut</TableHead>
+                        <TableHead className="text-right">Coût</TableHead>
+                        <TableHead className="w-8" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {workOrders.map((wo) => {
+                        const woStatus = workOrderStatus[wo.status];
+                        return (
+                          <TableRow key={wo.id} className="group cursor-pointer" onClick={() => router.push(`/maintenance/${wo.id}`)}>
+                            <TableCell className="max-w-0 w-full">
+                              <p className="truncate font-medium">{wo.title}</p>
+                              <p className="truncate text-xs text-muted-foreground">{wo.description || "—"}</p>
+                            </TableCell>
+                            <TableCell className="hidden text-muted-foreground sm:table-cell">{workOrderType[wo.type] ?? wo.type}</TableCell>
+                            <TableCell>
+                              {woStatus ? <StatusBadge tone={woStatus.tone}>{woStatus.label}</StatusBadge> : wo.status}
+                            </TableCell>
+                            <TableCell className="text-right font-medium tabular">{wo.total_cost ? formatMoney(wo.total_cost) : "—"}</TableCell>
+                            <TableCell className="pr-4">
+                              <ChevronRight className="size-4 text-subtle-foreground transition-transform group-hover:translate-x-0.5" />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </Panel>
+            </TabsContent>
 
-          <TabsContent value="tolls">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Landmark className="h-5 w-5 text-primary" />
-                  Dépenses de péage
-                </CardTitle>
-                <Dialog open={tollDialogOpen} onOpenChange={setTollDialogOpen}>
-                  <DialogTrigger
-                    render={
-                      <Button onClick={openTollDialog} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
-                        <Plus className="h-4 w-4" />
-                        Nouvelle dépense
-                      </Button>
-                    }
-                  />
-                  <DialogContent className="max-w-md sm:max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>Nouvelle dépense de péage</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleTollSubmit} className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label>Véhicule</Label>
-                          <Input value={`${vehicle.registration} — ${vehicle.brand} ${vehicle.model}`} disabled className="bg-muted/40" />
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label>Conducteur</Label>
-                          <Select value={tollForm.driver_id} onValueChange={(v) => updateTollForm("driver_id", v || "")}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Aucun" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">Aucun</SelectItem>
-                              {drivers.map((d) => (
-                                <SelectItem key={d.id} value={String(d.id)}>
-                                  {d.first_name} {d.last_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label htmlFor="toll_name">Nom du péage *</Label>
-                          <Input
-                            id="toll_name"
-                            required
-                            placeholder="Ex: Péage Autoroute A1"
-                            value={tollForm.toll_name}
-                            onChange={(e) => updateTollForm("toll_name", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="amount">Montant (FCFA) *</Label>
-                          <Input
-                            id="amount"
-                            type="number"
-                            required
-                            value={tollForm.amount}
-                            onChange={(e) => updateTollForm("amount", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Méthode de paiement</Label>
-                          <Select value={tollForm.payment_method} onValueChange={(v) => { if (v) updateTollForm("payment_method", v); }}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(tollMethodLabels).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>
-                                  {label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="expense_date">Date *</Label>
-                          <Input
-                            id="expense_date"
-                            type="date"
-                            required
-                            value={tollForm.expense_date}
-                            onChange={(e) => updateTollForm("expense_date", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mileage">Kilométrage</Label>
-                          <Input
-                            id="mileage"
-                            type="number"
-                            value={tollForm.mileage}
-                            onChange={(e) => updateTollForm("mileage", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label htmlFor="notes">Notes</Label>
-                          <Input
-                            id="notes"
-                            value={tollForm.notes}
-                            onChange={(e) => updateTollForm("notes", e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setTollDialogOpen(false)} className="rounded-xl">
-                          Annuler
+            {/* ── Péages ── */}
+            <TabsContent value="tolls">
+              <Panel
+                flush
+                title="Dépenses de péage"
+                description={tolls.length ? `${formatMoney(totalTollCost)} au total` : undefined}
+                actions={
+                  <Dialog open={tollDialogOpen} onOpenChange={setTollDialogOpen}>
+                    <DialogTrigger
+                      render={
+                        <Button size="sm" onClick={openTollDialog}>
+                          <Plus className="size-3.5" />
+                          Nouvelle dépense
                         </Button>
-                        <Button type="submit" disabled={savingToll} className="gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 shadow-lg shadow-primary/25">
-                          {savingToll ? "Enregistrement..." : "Enregistrer"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent>
+                      }
+                    />
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Nouvelle dépense de péage</DialogTitle>
+                      </DialogHeader>
+                      <form onSubmit={handleTollSubmit} className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <Field label="Véhicule" className="sm:col-span-2">
+                            <Input value={`${vehicle.registration} — ${vehicleName}`} disabled />
+                          </Field>
+                          <Field label="Conducteur" className="sm:col-span-2">
+                            <Select items={driverItems} value={tollForm.driver_id} onValueChange={(v) => updateTollForm("driver_id", v || "")}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Aucun" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Aucun</SelectItem>
+                                {drivers.map((d) => (
+                                  <SelectItem key={d.id} value={String(d.id)}>
+                                    {d.first_name} {d.last_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                          <Field label="Nom du péage" htmlFor="toll_name" required className="sm:col-span-2">
+                            <Input
+                              id="toll_name"
+                              required
+                              placeholder="Ex. : Péage autoroute du Nord"
+                              value={tollForm.toll_name}
+                              onChange={(e) => updateTollForm("toll_name", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Montant (FCFA)" htmlFor="toll_amount" required>
+                            <Input
+                              id="toll_amount"
+                              type="number"
+                              required
+                              value={tollForm.amount}
+                              onChange={(e) => updateTollForm("amount", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Moyen de paiement">
+                            <Select
+                              items={tollMethodLabels}
+                              value={tollForm.payment_method}
+                              onValueChange={(v) => {
+                                if (v) updateTollForm("payment_method", v);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(tollMethodLabels).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                          <Field label="Date" htmlFor="expense_date" required>
+                            <Input
+                              id="expense_date"
+                              type="date"
+                              required
+                              value={tollForm.expense_date}
+                              onChange={(e) => updateTollForm("expense_date", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Kilométrage" htmlFor="toll_mileage">
+                            <Input
+                              id="toll_mileage"
+                              type="number"
+                              value={tollForm.mileage}
+                              onChange={(e) => updateTollForm("mileage", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Notes" htmlFor="toll_notes" className="sm:col-span-2">
+                            <Input id="toll_notes" value={tollForm.notes} onChange={(e) => updateTollForm("notes", e.target.value)} />
+                          </Field>
+                        </div>
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setTollDialogOpen(false)}>
+                            Annuler
+                          </Button>
+                          <Button type="submit" disabled={savingToll}>
+                            {savingToll && <Loader2 className="size-4 animate-spin" />}
+                            {savingToll ? "Enregistrement…" : "Enregistrer"}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                }
+              >
                 {tolls.length === 0 ? (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucune dépense de péage enregistrée.
-                  </div>
+                  <EmptyState icon={Landmark} title="Aucune dépense de péage" description="Enregistrez les passages au péage pour suivre ces frais." />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-3 font-medium">Péage</th>
-                          <th className="pb-3 font-medium">Date</th>
-                          <th className="pb-3 font-medium">Méthode</th>
-                          <th className="pb-3 font-medium text-right">Montant</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tolls.map((toll) => (
-                          <tr key={toll.id} className="border-b last:border-0 transition-colors hover:bg-muted/40">
-                            <td className="py-4 font-semibold">{toll.toll_name}</td>
-                            <td className="py-4 text-muted-foreground">
-                              {new Date(toll.expense_date).toLocaleDateString("fr-FR")}
-                            </td>
-                            <td className="py-4">
-                              <Badge variant="outline" className="rounded-lg">
-                                {tollMethodLabels[toll.payment_method]}
-                              </Badge>
-                            </td>
-                            <td className="py-4 text-right font-semibold">
-                              {Number(toll.amount).toLocaleString("fr-FR")} FCFA
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Péage</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="hidden sm:table-cell">Paiement</TableHead>
+                        <TableHead className="text-right">Montant</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {tolls.map((toll) => (
+                        <TableRow key={toll.id}>
+                          <TableCell className="font-medium">{toll.toll_name}</TableCell>
+                          <TableCell className="text-muted-foreground tabular">{formatDate(toll.expense_date)}</TableCell>
+                          <TableCell className="hidden text-muted-foreground sm:table-cell">
+                            {tollMethodLabels[toll.payment_method] ?? toll.payment_method}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular">{formatMoney(toll.amount)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </Panel>
+            </TabsContent>
 
-          <TabsContent value="fuel">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Fuel className="h-5 w-5 text-primary" />
-                  Pleins de carburant
-                </CardTitle>
-                <Dialog open={fuelDialogOpen} onOpenChange={setFuelDialogOpen}>
-                  <DialogTrigger
-                    render={
-                      <Button onClick={openFuelDialog} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
-                        <Plus className="h-4 w-4" />
-                        Nouveau plein
-                      </Button>
-                    }
-                  />
-                  <DialogContent className="max-w-md sm:max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>Nouveau plein de carburant</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleFuelSubmit} className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label>Véhicule</Label>
-                          <Input value={`${vehicle.registration} — ${vehicle.brand} ${vehicle.model}`} disabled className="bg-muted/40" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Conducteur</Label>
-                          <Select value={fuelForm.driver_id} onValueChange={(v) => updateFuelForm("driver_id", v || "")}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Aucun" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">Aucun</SelectItem>
-                              {drivers.map((d) => (
-                                <SelectItem key={d.id} value={String(d.id)}>
-                                  {d.first_name} {d.last_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Type de carburant</Label>
-                          <Select value={fuelForm.fuel_type} onValueChange={(v) => { if (v) updateFuelForm("fuel_type", v); }}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(fuelLabels).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>
-                                  {label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="liters">Litres *</Label>
-                          <Input
-                            id="liters"
-                            type="number"
-                            step="0.01"
-                            required
-                            value={fuelForm.liters}
-                            onChange={(e) => updateFuelForm("liters", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="price_per_liter">Prix / litre (FCFA)</Label>
-                          <Input
-                            id="price_per_liter"
-                            type="number"
-                            step="0.01"
-                            value={fuelForm.price_per_liter}
-                            onChange={(e) => updateFuelForm("price_per_liter", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="amount">Montant total (FCFA)</Label>
-                          <Input
-                            id="amount"
-                            type="number"
-                            step="0.01"
-                            placeholder="Calculé si vide"
-                            value={fuelForm.amount}
-                            onChange={(e) => updateFuelForm("amount", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="refuel_date">Date *</Label>
-                          <Input
-                            id="refuel_date"
-                            type="date"
-                            required
-                            value={fuelForm.refuel_date}
-                            onChange={(e) => updateFuelForm("refuel_date", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="station_name">Station</Label>
-                          <Input
-                            id="station_name"
-                            value={fuelForm.station_name}
-                            onChange={(e) => updateFuelForm("station_name", e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mileage">Kilométrage</Label>
-                          <Input
-                            id="mileage"
-                            type="number"
-                            value={fuelForm.mileage}
-                            onChange={(e) => updateFuelForm("mileage", e.target.value)}
-                          />
-                        </div>
-                        <div className="flex items-center gap-3 pt-6">
-                          <Switch
-                            id="full_tank"
-                            checked={fuelForm.full_tank}
-                            onCheckedChange={(checked) => updateFuelForm("full_tank", Boolean(checked))}
-                          />
-                          <Label htmlFor="full_tank" className="cursor-pointer font-normal">
-                            Plein complet
-                          </Label>
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                          <Label htmlFor="notes">Notes</Label>
-                          <Input
-                            id="notes"
-                            value={fuelForm.notes}
-                            onChange={(e) => updateFuelForm("notes", e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setFuelDialogOpen(false)} className="rounded-xl">
-                          Annuler
+            {/* ── Carburant ── */}
+            <TabsContent value="fuel">
+              <Panel
+                flush
+                title="Pleins de carburant"
+                description={
+                  fuelExpenses.length ? `${formatNumber(totalFuelLiters, "L")} · ${formatMoney(totalFuelCost)} au total` : undefined
+                }
+                actions={
+                  <Dialog open={fuelDialogOpen} onOpenChange={setFuelDialogOpen}>
+                    <DialogTrigger
+                      render={
+                        <Button size="sm" onClick={openFuelDialog}>
+                          <Plus className="size-3.5" />
+                          Nouveau plein
                         </Button>
-                        <Button type="submit" disabled={savingFuel} className="gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 shadow-lg shadow-primary/25">
-                          {savingFuel ? "Enregistrement..." : "Enregistrer"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent>
+                      }
+                    />
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Nouveau plein de carburant</DialogTitle>
+                      </DialogHeader>
+                      <form onSubmit={handleFuelSubmit} className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <Field label="Véhicule" className="sm:col-span-2">
+                            <Input value={`${vehicle.registration} — ${vehicleName}`} disabled />
+                          </Field>
+                          <Field label="Conducteur">
+                            <Select items={driverItems} value={fuelForm.driver_id} onValueChange={(v) => updateFuelForm("driver_id", v || "")}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Aucun" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Aucun</SelectItem>
+                                {drivers.map((d) => (
+                                  <SelectItem key={d.id} value={String(d.id)}>
+                                    {d.first_name} {d.last_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                          <Field label="Carburant">
+                            <Select
+                              items={fuelLabels}
+                              value={fuelForm.fuel_type}
+                              onValueChange={(v) => {
+                                if (v) updateFuelForm("fuel_type", v);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(fuelLabels).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                          <Field label="Litres" htmlFor="liters" required>
+                            <Input
+                              id="liters"
+                              type="number"
+                              step="0.01"
+                              required
+                              value={fuelForm.liters}
+                              onChange={(e) => updateFuelForm("liters", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Prix / litre (FCFA)" htmlFor="price_per_liter">
+                            <Input
+                              id="price_per_liter"
+                              type="number"
+                              step="0.01"
+                              value={fuelForm.price_per_liter}
+                              onChange={(e) => updateFuelForm("price_per_liter", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Montant total (FCFA)" htmlFor="fuel_amount" hint="Calculé automatiquement si vide.">
+                            <Input
+                              id="fuel_amount"
+                              type="number"
+                              step="0.01"
+                              value={fuelForm.amount}
+                              onChange={(e) => updateFuelForm("amount", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Date" htmlFor="refuel_date" required>
+                            <Input
+                              id="refuel_date"
+                              type="date"
+                              required
+                              value={fuelForm.refuel_date}
+                              onChange={(e) => updateFuelForm("refuel_date", e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Station" htmlFor="station_name">
+                            <Input id="station_name" value={fuelForm.station_name} onChange={(e) => updateFuelForm("station_name", e.target.value)} />
+                          </Field>
+                          <Field label="Kilométrage" htmlFor="fuel_mileage">
+                            <Input
+                              id="fuel_mileage"
+                              type="number"
+                              value={fuelForm.mileage}
+                              onChange={(e) => updateFuelForm("mileage", e.target.value)}
+                            />
+                          </Field>
+                          <label
+                            htmlFor="full_tank"
+                            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border bg-surface-sunken px-3 py-2.5 sm:col-span-2"
+                          >
+                            <span>
+                              <span className="block text-[13px] font-medium">Plein complet</span>
+                              <span className="block text-xs text-muted-foreground">Réservoir rempli à ras, utile au calcul de consommation.</span>
+                            </span>
+                            <Switch
+                              id="full_tank"
+                              checked={fuelForm.full_tank}
+                              onCheckedChange={(checked) => updateFuelForm("full_tank", Boolean(checked))}
+                            />
+                          </label>
+                          <Field label="Notes" htmlFor="fuel_notes" className="sm:col-span-2">
+                            <Input id="fuel_notes" value={fuelForm.notes} onChange={(e) => updateFuelForm("notes", e.target.value)} />
+                          </Field>
+                        </div>
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setFuelDialogOpen(false)}>
+                            Annuler
+                          </Button>
+                          <Button type="submit" disabled={savingFuel}>
+                            {savingFuel && <Loader2 className="size-4 animate-spin" />}
+                            {savingFuel ? "Enregistrement…" : "Enregistrer"}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                }
+              >
                 {fuelExpenses.length === 0 ? (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucun plein de carburant enregistré.
-                  </div>
+                  <EmptyState icon={Fuel} title="Aucun plein enregistré" description="Ajoutez les pleins pour suivre la consommation et les dépenses de carburant." />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-3 font-medium">Date</th>
-                          <th className="pb-3 font-medium">Station</th>
-                          <th className="pb-3 font-medium">Carburant</th>
-                          <th className="pb-3 font-medium text-right">Litres</th>
-                          <th className="pb-3 font-medium text-right">Montant</th>
-                          <th className="pb-3 font-medium text-right"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fuelExpenses.map((refuel) => (
-                          <tr key={refuel.id} className="border-b last:border-0 transition-colors hover:bg-muted/40">
-                            <td className="py-4 text-muted-foreground">
-                              {new Date(refuel.refuel_date).toLocaleDateString("fr-FR")}
-                            </td>
-                            <td className="py-4">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold">{refuel.station_name || "—"}</span>
-                                {refuel.full_tank && (
-                                  <Badge className="rounded-lg border-0 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
-                                    Plein
-                                  </Badge>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-4 capitalize text-muted-foreground">{fuelLabels[refuel.fuel_type]}</td>
-                            <td className="py-4 text-right font-medium">{Number(refuel.liters).toLocaleString("fr-FR")} L</td>
-                            <td className="py-4 text-right font-semibold">
-                              {Number(refuel.amount).toLocaleString("fr-FR")} FCFA
-                            </td>
-                            <td className="py-4 text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleFuelDelete(refuel.id)}
-                                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Station</TableHead>
+                        <TableHead className="hidden sm:table-cell">Carburant</TableHead>
+                        <TableHead className="text-right">Litres</TableHead>
+                        <TableHead className="text-right">Montant</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {fuelExpenses.map((refuel) => (
+                        <TableRow key={refuel.id}>
+                          <TableCell className="text-muted-foreground tabular">{formatDate(refuel.refuel_date)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{refuel.station_name || "—"}</span>
+                              {refuel.full_tank && <StatusBadge tone="success">Plein</StatusBadge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground sm:table-cell">
+                            {fuelLabels[refuel.fuel_type] ?? refuel.fuel_type}
+                          </TableCell>
+                          <TableCell className="text-right tabular">{formatNumber(refuel.liters, "L")}</TableCell>
+                          <TableCell className="text-right font-medium tabular">{formatMoney(refuel.amount)}</TableCell>
+                          <TableCell className="pr-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleFuelDelete(refuel.id)}
+                              className="text-muted-foreground hover:text-danger"
+                              title="Supprimer ce plein"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </Panel>
+            </TabsContent>
 
-          <TabsContent value="costs">
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Coût total maintenance</p>
-                  <p className="mt-1 text-2xl font-bold">{totalMaintenanceCost.toLocaleString("fr-FR")} FCFA</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Coût total carburant</p>
-                  <p className="mt-1 text-2xl font-bold">{totalFuelCost.toLocaleString("fr-FR")} FCFA</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{totalFuelLiters.toLocaleString("fr-FR")} L au total</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Coût total péages</p>
-                  <p className="mt-1 text-2xl font-bold">{totalTollCost.toLocaleString("fr-FR")} FCFA</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Interventions</p>
-                  <p className="mt-1 text-2xl font-bold">{workOrders.length}</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Coût moyen / intervention</p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {workOrders.length ? Math.round(totalMaintenanceCost / workOrders.length).toLocaleString("fr-FR") : 0} FCFA
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-muted-foreground">Coût total véhicule</p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {(totalMaintenanceCost + totalTollCost + totalFuelCost).toLocaleString("fr-FR")} FCFA
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-            <Card className="mt-5 rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Euro className="h-5 w-5 text-primary" />
-                  Historique des coûts
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            {/* ── Coûts ── */}
+            <TabsContent value="costs" className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <StatCard label="Coût total véhicule" value={formatMoney(totalCost)} icon={Wallet} hint="Maintenance, carburant et péages" />
+                <StatCard label="Maintenance" value={formatMoney(totalMaintenanceCost)} icon={Wrench} hint={`${workOrders.length} intervention(s)`} />
+                <StatCard
+                  label="Coût moyen / intervention"
+                  value={formatMoney(workOrders.length ? Math.round(totalMaintenanceCost / workOrders.length) : 0)}
+                  icon={Gauge}
+                />
+                <StatCard label="Carburant" value={formatMoney(totalFuelCost)} icon={Fuel} hint={`${formatNumber(totalFuelLiters, "L")} au total`} />
+                <StatCard label="Péages" value={formatMoney(totalTollCost)} icon={Landmark} hint={`${tolls.length} passage(s)`} />
+                <StatCard label="Interventions" value={formatNumber(workOrders.length)} icon={Calendar} />
+              </div>
+
+              <Panel flush title="Historique des coûts de maintenance">
                 {workOrders.length === 0 ? (
-                  <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucune donnée de coût.
-                  </div>
+                  <EmptyState icon={Wallet} title="Aucune donnée de coût" description="Les coûts des interventions apparaîtront ici." />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-3 font-medium">Date</th>
-                          <th className="pb-3 font-medium">Titre</th>
-                          <th className="pb-3 font-medium">Type</th>
-                          <th className="pb-3 font-medium text-right">Coût</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {workOrders.map((wo) => (
-                          <tr key={wo.id} className="border-b last:border-0 transition-colors hover:bg-muted/40">
-                            <td className="py-4 text-muted-foreground">
-                              {wo.completed_at
-                                ? new Date(wo.completed_at).toLocaleDateString("fr-FR")
-                                : new Date(wo.created_at).toLocaleDateString("fr-FR")}
-                            </td>
-                            <td className="py-4 font-semibold">{wo.title}</td>
-                            <td className="py-4 capitalize text-muted-foreground">{wo.type}</td>
-                            <td className="py-4 text-right font-semibold">
-                              {Number(wo.total_cost || 0).toLocaleString("fr-FR")} FCFA
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Intervention</TableHead>
+                        <TableHead className="hidden sm:table-cell">Type</TableHead>
+                        <TableHead className="text-right">Coût</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {workOrders.map((wo) => (
+                        <TableRow key={wo.id}>
+                          <TableCell className="text-muted-foreground tabular">{formatDate(wo.completed_at || wo.created_at)}</TableCell>
+                          <TableCell className="font-medium">{wo.title}</TableCell>
+                          <TableCell className="hidden text-muted-foreground sm:table-cell">{workOrderType[wo.type] ?? wo.type}</TableCell>
+                          <TableCell className="text-right font-medium tabular">{formatMoney(wo.total_cost || 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </Panel>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* ─────────── Colonne latérale ─────────── */}
+        <aside className="space-y-6">
+          <Panel title="Synthèse des coûts" actions={<Wallet className="size-4 text-subtle-foreground" />}>
+            <p className="text-[1.5rem] leading-none font-semibold tracking-tight tabular">{formatMoney(totalCost)}</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">Coût cumulé enregistré pour ce véhicule</p>
+            <DetailList
+              className="mt-4 border-t pt-2.5"
+              items={[
+                { label: "Maintenance", value: formatMoney(totalMaintenanceCost) },
+                { label: "Carburant", value: formatMoney(totalFuelCost) },
+                { label: "Péages", value: formatMoney(totalTollCost) },
+                { label: "Volume carburant", value: formatNumber(totalFuelLiters, "L") },
+              ]}
+            />
+          </Panel>
+
+          <Panel
+            title="Chauffeur"
+            actions={
+              <Button variant="ghost" size="sm" onClick={() => setTab("driver")}>
+                {driver ? "Changer" : "Affecter"}
+              </Button>
+            }
+          >
+            {driver ? (
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary-subtle text-sm font-semibold text-primary">
+                  {initials(driver.first_name, driver.last_name)}
+                </span>
+                <div className="min-w-0">
+                  <Link href={`/drivers/${driver.id}`} className="block truncate text-sm font-medium hover:underline">
+                    {fullName(driver)}
+                  </Link>
+                  <p className="truncate text-xs text-muted-foreground">{driver.phone || driver.email || "—"}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Aucun chauffeur affecté à ce véhicule.</p>
+            )}
+          </Panel>
+
+          <Panel title="Fiche technique">
+            <DetailList
+              items={[
+                { label: "Type", value: typeLabel },
+                { label: "VIN", value: vehicle.vin ? <span className="font-mono text-xs">{vehicle.vin}</span> : "—" },
+                { label: "Mise en circulation", value: formatDate(vehicle.first_registration_date) },
+                { label: "Prix d'achat", value: vehicle.purchase_price ? formatMoney(vehicle.purchase_price) : "—" },
+                { label: "Documents", value: formatNumber(documents.length) },
+              ]}
+            />
+          </Panel>
+        </aside>
       </div>
     </AppShell>
   );

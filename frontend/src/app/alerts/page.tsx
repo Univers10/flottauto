@@ -1,18 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Bell, AlertTriangle, RefreshCw, CheckCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AlertTriangle, BellOff, BellRing, Check, CheckCheck, Info, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState, PageHeader, Panel, StatusBadge, Toolbar, toneSurface, SegmentButton } from "@/components/app/primitives";
 import { api, markAlertRead, markAllAlertsRead, refreshAlerts } from "@/lib/api";
+import { alertSeverity } from "@/lib/labels";
+import { formatDate, formatRelativeDays } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { AlertItem } from "@/types";
 import { toast } from "sonner";
+
+const severityOrder = ["critical", "warning", "info"] as const;
+type Severity = (typeof severityOrder)[number];
+
+const severityIcon: Record<Severity, React.ElementType> = {
+  critical: AlertTriangle,
+  warning: BellRing,
+  info: Info,
+};
+
+function normalizeSeverity(value: string): Severity {
+  return (severityOrder as readonly string[]).includes(value) ? (value as Severity) : "info";
+}
+
+function Count({ value }: { value: number }) {
+  return <span className="rounded bg-muted px-1.5 text-[11px] text-muted-foreground tabular">{value}</span>;
+}
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [filter, setFilter] = useState<"all" | "unread">("unread");
+  const [severity, setSeverity] = useState<Severity | "all">("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -48,9 +69,7 @@ export default function AlertsPage() {
   async function markRead(id: number) {
     try {
       await markAlertRead(id);
-      setAlerts((prev) =>
-        prev.map((a) => (a.id === id ? { ...a, is_read: true } : a))
-      );
+      setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, is_read: true } : a)));
     } catch (err: any) {
       toast.error(err.message || "Erreur");
     }
@@ -66,121 +85,135 @@ export default function AlertsPage() {
     }
   }
 
-  const severityConfig: Record<string, { icon: React.ElementType; color: string }> = {
-    critical: { icon: AlertTriangle, color: "bg-rose-50 text-rose-700" },
-    warning: { icon: Bell, color: "bg-amber-50 text-amber-700" },
-    info: { icon: Check, color: "bg-blue-50 text-blue-700" },
-  };
-
-  const filteredAlerts = filter === "unread" ? alerts.filter((a) => !a.is_read) : alerts;
   const unreadCount = alerts.filter((a) => !a.is_read).length;
+  const readScoped = filter === "unread" ? alerts.filter((a) => !a.is_read) : alerts;
+
+  const severityCounts: Record<Severity | "all", number> = { all: readScoped.length, critical: 0, warning: 0, info: 0 };
+  readScoped.forEach((a) => (severityCounts[normalizeSeverity(a.severity)] += 1));
+
+  const filteredAlerts = severity === "all" ? readScoped : readScoped.filter((a) => normalizeSeverity(a.severity) === severity);
+
+  const groups = severityOrder
+    .map((sev) => ({ sev, items: filteredAlerts.filter((a) => normalizeSeverity(a.severity) === sev) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Centre de notifications</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{unreadCount} alerte(s) non lue(s)</p>
-          </div>
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="h-10 gap-2 rounded-xl border-border/60"
-            >
-              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+      <PageHeader
+        title="Alertes"
+        description={unreadCount > 0 ? `${unreadCount} alerte(s) non lue(s)` : "Vous êtes à jour"}
+        actions={
+          <>
+            <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
               Actualiser
             </Button>
             {unreadCount > 0 && (
-              <Button onClick={markAllRead} className="h-10 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-4 shadow-lg shadow-primary/25">
-                <CheckCheck className="h-4 w-4" />
-                Tout marquer lu
+              <Button onClick={markAllRead}>
+                <CheckCheck className="size-4" />
+                Tout marquer comme lu
               </Button>
             )}
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-lg font-semibold">Alertes</CardTitle>
-            <div className="flex gap-1 rounded-xl bg-muted/60 p-1">
-              <button
-                onClick={() => setFilter("unread")}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                  filter === "unread" ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Non lues
-              </button>
-              <button
-                onClick={() => setFilter("all")}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                  filter === "all" ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Toutes
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Chargement...</div>
-            ) : filteredAlerts.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                {filter === "unread" ? "Aucune alerte non lue." : "Aucune alerte."}
-              </div>
-            ) : (
-              <ul className="space-y-3">
-                {filteredAlerts.map((alert) => {
-                  const cfg = severityConfig[alert.severity] ?? severityConfig.info;
-                  const Icon = cfg.icon;
-                  return (
-                    <li
-                      key={alert.id}
-                      className={cn(
-                        "flex items-start justify-between gap-4 rounded-2xl border border-border/60 p-4 transition-all hover:bg-muted/40",
-                        alert.is_read && "opacity-60"
-                      )}
-                    >
-                      <div className="flex gap-3">
-                        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", cfg.color)}>
-                          <Icon className="h-5 w-5" />
+      <Panel flush>
+        <Toolbar className="justify-between">
+          <div className="flex gap-1">
+            <SegmentButton active={filter === "unread"} onClick={() => setFilter("unread")}>
+              Non lues
+              <Count value={unreadCount} />
+            </SegmentButton>
+            <SegmentButton active={filter === "all"} onClick={() => setFilter("all")}>
+              Toutes
+              <Count value={alerts.length} />
+            </SegmentButton>
+          </div>
+          <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">
+            <SegmentButton active={severity === "all"} onClick={() => setSeverity("all")}>
+              Toutes gravités
+              <Count value={severityCounts.all} />
+            </SegmentButton>
+            {severityOrder.map((sev) => (
+              <SegmentButton key={sev} active={severity === sev} onClick={() => setSeverity(sev)}>
+                {alertSeverity[sev].label}
+                <Count value={severityCounts[sev]} />
+              </SegmentButton>
+            ))}
+          </div>
+        </Toolbar>
+
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : filteredAlerts.length === 0 ? (
+          <EmptyState
+            icon={BellOff}
+            title={filter === "unread" ? "Aucune alerte non lue" : "Aucune alerte"}
+            description={
+              severity !== "all"
+                ? "Aucune alerte pour cette gravité."
+                : filter === "unread"
+                  ? "Toutes les alertes ont été traitées."
+                  : "Les échéances et anomalies de la flotte apparaîtront ici."
+            }
+          />
+        ) : (
+          <div>
+            {groups.map(({ sev, items }) => {
+              const def = alertSeverity[sev];
+              const Icon = severityIcon[sev];
+              return (
+                <section key={sev} aria-label={def.label}>
+                  <h3 className="flex items-center gap-2 border-b bg-surface-sunken px-5 py-2 text-xs font-medium text-muted-foreground">
+                    {def.label}
+                    <span className="tabular">· {items.length}</span>
+                  </h3>
+                  <ul className="divide-y border-b last:border-b-0">
+                    {items.map((alert) => (
+                      <li
+                        key={alert.id}
+                        className={cn("flex items-start gap-4 px-5 py-4 transition-colors hover:bg-accent/50", alert.is_read && "opacity-60")}
+                      >
+                        <span className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border", toneSurface(def.tone))}>
+                          <Icon className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium">{alert.title}</p>
+                            <StatusBadge tone={def.tone}>{def.label}</StatusBadge>
+                            {!alert.is_read && <span className="size-1.5 rounded-full bg-primary" aria-label="Non lue" />}
+                          </div>
+                          {alert.message && <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>}
+                          <p className="mt-1.5 text-xs text-muted-foreground tabular">
+                            {alert.due_date ? (
+                              <>
+                                Échéance : <span className="text-foreground">{formatDate(alert.due_date)}</span> ({formatRelativeDays(alert.due_date)})
+                                {" · "}
+                              </>
+                            ) : null}
+                            Créée le {formatDate(alert.created_at)}
+                          </p>
                         </div>
-                        <div>
-                          <p className="font-semibold">{alert.title}</p>
-                          <p className="text-sm text-muted-foreground">{alert.message}</p>
-                          {alert.due_date && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Échéance : {new Date(alert.due_date).toLocaleDateString("fr-FR")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
                         {!alert.is_read && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => markRead(alert.id)}
-                            className="rounded-lg border-border/60"
-                          >
-                            <Check className="mr-1.5 h-4 w-4" />
-                            Lu
+                          <Button size="sm" variant="outline" onClick={() => markRead(alert.id)} className="shrink-0">
+                            <Check className="size-4" />
+                            Marquer lu
                           </Button>
                         )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
     </AppShell>
   );
 }

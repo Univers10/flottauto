@@ -1,108 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  Car,
-  Users,
-  Wrench,
-  Bell,
   AlertTriangle,
-  FileText,
-  CalendarClock,
-  Euro,
-  Download,
-  MoreHorizontal,
-  RefreshCw,
   ArrowUpRight,
-  Activity,
+  Bell,
+  Car,
+  CheckCircle2,
+  FileClock,
+  RefreshCw,
+  Users,
+  Wallet,
+  Wrench,
 } from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  AreaChart,
-  Area,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState, PageHeader, Panel, Plate, StatCard, StatusBadge, toneSurface } from "@/components/app/primitives";
 import { api } from "@/lib/api";
-import type { DashboardStats, AlertItem, WorkOrder } from "@/types";
+import { alertSeverity, vehicleStatus, workOrderStatus, workOrderType } from "@/lib/labels";
+import { formatDate, formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import type { AlertItem, DashboardStats, Vehicle, VehicleStatus, WorkOrder } from "@/types";
 import { toast } from "sonner";
 
-const statusLabels: Record<string, string> = {
-  available: "Disponible",
-  in_mission: "En mission",
-  in_maintenance: "En maintenance",
-  out_of_service: "Hors service",
-};
+const MONTHS = 6;
 
-function KpiCard({
-  title,
-  value,
-  icon: Icon,
-  trend,
-  trendLabel,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  trend?: string;
-  trendLabel?: string;
-  color?: string;
-}) {
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
+  if (!active || !payload?.length) return null;
   return (
-    <Card className="relative overflow-hidden rounded-2xl border-none bg-card shadow-sm shadow-black/5 transition-all hover:shadow-md">
-      <div className={cn("absolute right-4 top-4 rounded-xl p-2", color ?? "bg-primary/10")}>
-        <Icon className="h-5 w-5 text-primary" />
-      </div>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-bold tracking-tight">{value}</div>
-        {trend && (
-          <p className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-600">
-            {trend}
-            <span className="text-muted-foreground">{trendLabel}</span>
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border bg-popover px-3 py-2 shadow-pop">
+      <p className="text-xs text-muted-foreground capitalize">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold tabular">{formatMoney(payload[0].value)}</p>
+    </div>
   );
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   async function loadData() {
     try {
-      const [s, a, wo] = await Promise.all([
+      const [s, a, wo, v] = await Promise.all([
         api.get<DashboardStats>("/dashboard/stats"),
         api.get<AlertItem[]>("/alerts?unread_only=true&limit=10"),
         api.get<WorkOrder[]>("/maintenance/work-orders"),
+        api.get<{ items: Vehicle[] }>("/vehicles?size=100"),
       ]);
       setStats(s);
       setAlerts(a);
       setWorkOrders(wo);
+      setVehicles(v.items);
     } catch (err: any) {
       toast.error(err.message || "Erreur de chargement");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -114,7 +77,7 @@ export default function DashboardPage() {
     setRefreshing(true);
     try {
       const res = await api.post<{ created: number }>("/dashboard/refresh-alerts", {});
-      toast.success(`${res.created} alerte(s) générée(s)`);
+      toast.success(res.created ? `${res.created} nouvelle(s) alerte(s)` : "Aucune nouvelle alerte");
       await loadData();
     } catch (err: any) {
       toast.error(err.message || "Erreur");
@@ -123,265 +86,312 @@ export default function DashboardPage() {
     }
   }
 
-  const fleetTrend = [
-    { name: "Lun", disponibles: 6, maintenance: 1, mission: 1 },
-    { name: "Mar", disponibles: 5, maintenance: 2, mission: 1 },
-    { name: "Mer", disponibles: 7, maintenance: 1, mission: 0 },
-    { name: "Jeu", disponibles: 6, maintenance: 2, mission: 0 },
-    { name: "Ven", disponibles: 8, maintenance: 0, mission: 0 },
-    { name: "Sam", disponibles: 8, maintenance: 0, mission: 0 },
-    { name: "Dim", disponibles: 7, maintenance: 1, mission: 0 },
-  ];
+  const vehicleById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
 
-  const costByType = workOrders.length
-    ? [
-        {
-          name: "Préventif",
-          value: workOrders
-            .filter((wo) => wo.type === "preventive" && wo.total_cost)
-            .reduce((acc, wo) => acc + Number(wo.total_cost), 0),
-        },
-        {
-          name: "Curatif",
-          value: workOrders
-            .filter((wo) => wo.type === "curative" && wo.total_cost)
-            .reduce((acc, wo) => acc + Number(wo.total_cost), 0),
-        },
-      ]
-    : [
-        { name: "Préventif", value: 0 },
-        { name: "Curatif", value: 0 },
-      ];
+  // Répartition réelle des statuts de la flotte
+  const statusCounts = useMemo(() => {
+    const counts: Record<VehicleStatus, number> = { available: 0, in_mission: 0, in_maintenance: 0, out_of_service: 0 };
+    vehicles.forEach((v) => (counts[v.status] += 1));
+    return counts;
+  }, [vehicles]);
+  const totalVehicles = vehicles.length || stats?.total_vehicles || 0;
+  const availability = totalVehicles ? Math.round((statusCounts.available / totalVehicles) * 100) : 0;
+
+  // Coûts de maintenance par mois (date de création de l'ordre)
+  const monthlyCosts = useMemo(() => {
+    const now = new Date();
+    const buckets = Array.from({ length: MONTHS }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS - 1 - i), 1);
+      return { key: monthKey(d), label: d.toLocaleDateString("fr-FR", { month: "short" }).replace(".", ""), full: d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }), value: 0 };
+    });
+    const index = new Map(buckets.map((b, i) => [b.key, i]));
+    workOrders.forEach((wo) => {
+      const i = index.get(monthKey(new Date(wo.created_at)));
+      if (i !== undefined && wo.total_cost) buckets[i].value += Number(wo.total_cost);
+    });
+    return buckets;
+  }, [workOrders]);
+  const periodTotal = monthlyCosts.reduce((acc, m) => acc + m.value, 0);
+
+  // Véhicules les plus coûteux en maintenance
+  const topVehicles = useMemo(() => {
+    const totals = new Map<number, number>();
+    workOrders.forEach((wo) => {
+      if (wo.total_cost) totals.set(wo.vehicle_id, (totals.get(wo.vehicle_id) ?? 0) + Number(wo.total_cost));
+    });
+    return [...totals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id, total]) => ({ vehicle: vehicleById.get(id), id, total }));
+  }, [workOrders, vehicleById]);
+  const topMax = topVehicles[0]?.total ?? 0;
+
+  const recentOrders = workOrders.slice(0, 6);
+  const openOrders = workOrders.filter((wo) => wo.status !== "done" && wo.status !== "validated").length;
 
   return (
     <AppShell>
-      <div className="space-y-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Tableau de bord</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Vue d&apos;ensemble de votre flotte — {new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadData}
-              className="h-9 gap-2 rounded-xl border-border/60 bg-card px-4"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Rafraîchir
+      <PageHeader
+        title="Tableau de bord"
+        description="Vue d'ensemble de l'activité de votre flotte."
+        actions={
+          <>
+            <Button variant="outline" onClick={loadData}>
+              <RefreshCw className="size-4" />
+              Actualiser
             </Button>
-            <Button
-              size="sm"
-              onClick={handleRefreshAlerts}
-              disabled={refreshing}
-              className="h-9 gap-2 rounded-xl px-4"
-            >
-              <Bell className="h-4 w-4" />
-              {refreshing ? "Génération..." : "Générer alertes"}
+            <Button onClick={handleRefreshAlerts} disabled={refreshing}>
+              <Bell className="size-4" />
+              {refreshing ? "Analyse…" : "Vérifier les échéances"}
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            title="Véhicules"
-            value={stats?.total_vehicles ?? "—"}
-            icon={Car}
-            trend="+2"
-            trendLabel="ce mois-ci"
-            color="bg-blue-100 text-blue-600"
-          />
-          <KpiCard
-            title="Conducteurs actifs"
-            value={stats?.active_drivers ?? "—"}
-            icon={Users}
-            trend="+1"
-            trendLabel="nouveau"
-            color="bg-emerald-100 text-emerald-600"
-          />
-          <KpiCard
-            title="Ordres en cours"
-            value={stats?.open_work_orders ?? "—"}
-            icon={Wrench}
-            trend=" stable"
-            trendLabel=" vs semaine dernière"
-            color="bg-amber-100 text-amber-600"
-          />
-          <KpiCard
-            title="Alertes critiques"
-            value={stats?.critical_alerts ?? "—"}
-            icon={AlertTriangle}
-            trendLabel="nécessitent attention"
-            color="bg-rose-100 text-rose-600"
-          />
-        </div>
+      {/* Indicateurs */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[118px] rounded-xl" />)
+        ) : (
+          <>
+            <StatCard
+              label="Véhicules"
+              value={totalVehicles}
+              hint={`${statusCounts.available} disponible(s) · ${statusCounts.in_maintenance} en maintenance`}
+              icon={Car}
+              href="/vehicles"
+            />
+            <StatCard
+              label="Ordres de travail ouverts"
+              value={stats?.open_work_orders ?? openOrders}
+              hint={`${workOrders.length} intervention(s) au total`}
+              icon={Wrench}
+              tone={(stats?.open_work_orders ?? openOrders) > 0 ? "warning" : undefined}
+              href="/maintenance"
+            />
+            <StatCard
+              label="Coût de maintenance du mois"
+              value={formatMoney(stats?.cost_this_month ?? monthlyCosts[MONTHS - 1]?.value ?? 0, { compact: true })}
+              hint={`${formatMoney(periodTotal, { compact: true })} sur ${MONTHS} mois`}
+              icon={Wallet}
+            />
+            <StatCard
+              label="Alertes critiques"
+              value={stats?.critical_alerts ?? 0}
+              hint={`${stats?.upcoming_document_expirations ?? 0} document(s) à renouveler sous 30 j`}
+              icon={AlertTriangle}
+              tone={(stats?.critical_alerts ?? 0) > 0 ? "danger" : "success"}
+              href="/alerts"
+            />
+          </>
+        )}
+      </div>
 
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="lg:col-span-2 rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-semibold">Activité de la flotte</CardTitle>
-                <p className="text-xs text-muted-foreground">Évolution des véhicules disponibles, en mission et en maintenance</p>
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        {/* Coûts mensuels */}
+        <Panel
+          className="xl:col-span-2"
+          title="Coûts de maintenance"
+          description={`${MONTHS} derniers mois · par date d'ouverture de l'intervention`}
+          actions={<span className="text-sm font-semibold tabular">{formatMoney(periodTotal)}</span>}
+        >
+          {loading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : periodTotal === 0 ? (
+            <EmptyState icon={Wallet} title="Aucun coût sur la période" description="Les coûts apparaîtront dès qu'une intervention sera chiffrée." className="h-64 py-0" />
+          ) : (
+            <div className="h-64" role="img" aria-label={`Coûts de maintenance par mois : ${monthlyCosts.map((m) => `${m.full} ${formatMoney(m.value)}`).join(", ")}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyCosts} margin={{ top: 8, right: 4, left: 4, bottom: 0 }} barCategoryGap="28%">
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--chart-axis)" }} dy={6} />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={48}
+                    tick={{ fontSize: 12, fill: "var(--chart-axis)" }}
+                    tickFormatter={(v) => new Intl.NumberFormat("fr-FR", { notation: "compact" }).format(v)}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "var(--accent)" }}
+                    content={({ active, payload }) => (
+                      <ChartTooltip
+                        active={active}
+                        payload={payload as unknown as { value: number }[]}
+                        label={(payload?.[0]?.payload as { full?: string } | undefined)?.full}
+                      />
+                    )}
+                  />
+                  <Bar dataKey="value" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={44} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Panel>
+
+        {/* Disponibilité */}
+        <Panel title="Disponibilité de la flotte" description="Statut actuel des véhicules">
+          {loading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-semibold tracking-tight tabular">{availability}%</span>
+                <span className="text-sm text-muted-foreground">disponibles</span>
               </div>
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={fleetTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorDispo" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorMaint" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12 }} />
-                    <Legend iconType="circle" />
-                    <Area
-                      type="monotone"
-                      dataKey="disponibles"
-                      name="Disponibles"
-                      stroke="#2563eb"
-                      strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#colorDispo)"
+              <div className="mt-5 flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                {(Object.keys(vehicleStatus) as VehicleStatus[]).map((s) =>
+                  statusCounts[s] > 0 ? (
+                    <div
+                      key={s}
+                      className={cn(
+                        "h-full",
+                        { success: "bg-success", info: "bg-info", warning: "bg-warning", danger: "bg-danger", neutral: "bg-neutral" }[vehicleStatus[s].tone]
+                      )}
+                      style={{ width: `${(statusCounts[s] / totalVehicles) * 100}%` }}
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="maintenance"
-                      name="En maintenance"
-                      stroke="#f59e0b"
-                      strokeWidth={3}
-                      fillOpacity={1}
-                      fill="url(#colorMaint)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-semibold">Répartition</CardTitle>
-                <p className="text-xs text-muted-foreground">Statut des véhicules</p>
-              </div>
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="h-56">
-                {stats ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: "Disponibles", value: stats.available_vehicles },
-                          { name: "En mission", value: Math.max(0, stats.total_vehicles - stats.available_vehicles - stats.in_maintenance_vehicles) },
-                          { name: "En maintenance", value: stats.in_maintenance_vehicles },
-                        ].filter((d) => d.value > 0)}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={80}
-                        dataKey="value"
-                        paddingAngle={3}
-                      >
-                        {["#2563eb", "#0ea5e9", "#f59e0b"].map((color, i) => (
-                          <Cell key={i} fill={color} stroke="none" />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend iconType="circle" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Chargement...</div>
+                  ) : null
                 )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-semibold">Coûts par type</CardTitle>
-                <p className="text-xs text-muted-foreground">Maintenance validée</p>
-              </div>
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <Download className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={costByType} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v} FCFA`} />
-                    <Tooltip formatter={(v) => [`${Number(v).toLocaleString("fr-FR")} FCFA`, "Coût"]} contentStyle={{ borderRadius: 12 }} />
-                    <Bar dataKey="value" fill="#2563eb" radius={[8, 8, 0, 0]} barSize={48} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2 rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-semibold">Alertes prioritaires</CardTitle>
-                <p className="text-xs text-muted-foreground">Documents, permis et maintenances à surveiller</p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => router.push("/alerts")} className="gap-1 rounded-xl text-primary">
-                Voir tout <ArrowUpRight className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {alerts.length === 0 ? (
-                <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                  <Activity className="mb-2 h-8 w-8 opacity-40" />
-                  Aucune alerte prioritaire
+              <ul className="mt-6 space-y-3">
+                {(Object.keys(vehicleStatus) as VehicleStatus[]).map((s) => (
+                  <li key={s} className="flex items-center justify-between text-sm">
+                    <StatusBadge tone={vehicleStatus[s].tone}>{vehicleStatus[s].label}</StatusBadge>
+                    <span className="font-medium tabular">
+                      {statusCounts[s]}
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        {totalVehicles ? Math.round((statusCounts[s] / totalVehicles) * 100) : 0}%
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 grid grid-cols-2 gap-3 border-t pt-4 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Conducteurs actifs</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 font-semibold tabular">
+                    <Users className="size-3.5 text-muted-foreground" />
+                    {stats?.active_drivers ?? "—"}
+                  </p>
                 </div>
-              ) : (
-                <ul className="space-y-3">
-                  {alerts.slice(0, 6).map((alert) => (
-                    <li
-                      key={alert.id}
-                      className="flex items-start justify-between gap-4 rounded-xl border border-border/60 p-3 transition-colors hover:bg-muted/40"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{alert.title}</p>
-                        <p className="truncate text-sm text-muted-foreground">{alert.message}</p>
+                <div>
+                  <p className="text-xs text-muted-foreground">Âge moyen</p>
+                  <p className="mt-0.5 font-semibold tabular">
+                    {stats?.average_fleet_age_years != null ? `${stats.average_fleet_age_years.toFixed(1)} ans` : "—"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        {/* Interventions récentes */}
+        <Panel
+          className="xl:col-span-2"
+          title="Interventions récentes"
+          flush
+          actions={
+            <Link href="/maintenance" className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline">
+              Tout voir <ArrowUpRight className="size-3.5" />
+            </Link>
+          }
+        >
+          {loading ? (
+            <div className="space-y-2 p-5">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : recentOrders.length === 0 ? (
+            <EmptyState icon={Wrench} title="Aucune intervention" description="Les ordres de travail apparaîtront ici." />
+          ) : (
+            <ul className="divide-y">
+              {recentOrders.map((wo) => {
+                const v = vehicleById.get(wo.vehicle_id);
+                const st = workOrderStatus[wo.status];
+                return (
+                  <li key={wo.id}>
+                    <Link href={`/maintenance/${wo.id}`} className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-accent/60">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-surface-sunken text-muted-foreground">
+                        <Wrench className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{wo.title}</p>
+                        <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          {v ? <Plate value={v.registration} size="sm" /> : `Véhicule #${wo.vehicle_id}`}
+                          <span>{workOrderType[wo.type]}</span>
+                          <span aria-hidden>·</span>
+                          <span>{formatDate(wo.created_at)}</span>
+                        </p>
                       </div>
-                      <Badge
-                        variant={alert.severity === "critical" ? "destructive" : "secondary"}
-                        className="shrink-0 rounded-lg"
-                      >
-                        {alert.severity}
-                      </Badge>
+                      <span className="hidden text-sm font-medium tabular sm:block">{wo.total_cost ? formatMoney(wo.total_cost) : "—"}</span>
+                      <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+
+        <div className="space-y-6">
+          {/* Alertes */}
+          <Panel
+            title="Alertes prioritaires"
+            flush
+            actions={
+              <Link href="/alerts" className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline">
+                Tout voir <ArrowUpRight className="size-3.5" />
+              </Link>
+            }
+          >
+            {alerts.length === 0 ? (
+              <EmptyState icon={CheckCircle2} title="Rien à signaler" description="Aucune alerte non lue." className="py-10" />
+            ) : (
+              <ul className="divide-y">
+                {alerts.slice(0, 5).map((alert) => {
+                  const sev = alertSeverity[alert.severity] ?? alertSeverity.info;
+                  return (
+                    <li key={alert.id} className="flex items-start gap-3 px-5 py-3">
+                      <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border", toneSurface(sev.tone))}>
+                        {alert.alert_type === "document_expiry" ? <FileClock className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium">{alert.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{alert.message}</p>
+                      </div>
                     </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+
+          {/* Top véhicules */}
+          <Panel title="Véhicules les plus coûteux" description="Total des interventions chiffrées">
+            {topVehicles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucune donnée de coût.</p>
+            ) : (
+              <ul className="space-y-3.5">
+                {topVehicles.map(({ vehicle, id, total }) => (
+                  <li key={id}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <Link href={`/vehicles/${id}`} className="flex min-w-0 items-center gap-2 hover:underline">
+                        {vehicle ? <Plate value={vehicle.registration} size="sm" /> : null}
+                        <span className="truncate text-muted-foreground">{vehicle ? `${vehicle.brand} ${vehicle.model}` : `Véhicule #${id}`}</span>
+                      </Link>
+                      <span className="shrink-0 font-medium tabular">{formatMoney(total, { compact: true })}</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-chart-1" style={{ width: `${(total / topMax) * 100}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
       </div>
     </AppShell>

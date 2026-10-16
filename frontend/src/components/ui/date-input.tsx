@@ -17,8 +17,8 @@ export function DateInput({ className, value, onValueChange, ...props }: DateInp
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         className={cn(
-          "h-11 w-full min-w-0 rounded-xl border border-border/60 bg-muted/50 px-3.5 py-2 text-base transition-colors outline-none focus-visible:border-ring focus-visible:bg-background focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 md:text-sm dark:bg-input/30",
-          value ? "pr-10" : "pr-3.5",
+          "h-10 w-full min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm shadow-xs transition-[color,box-shadow,border-color] outline-none placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/15 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/15 dark:bg-input/20 tabular",
+          value ? "pr-10" : "pr-3",
           className
         )}
         {...props}

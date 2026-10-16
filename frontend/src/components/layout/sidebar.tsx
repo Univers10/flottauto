@@ -3,94 +3,153 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Bell,
   Car,
+  Fuel,
+  Landmark,
+  LayoutDashboard,
+  Menu,
+  Settings,
   Users,
   Wrench,
-  LayoutDashboard,
-  Bell,
-  Settings,
-  Menu,
-  ShieldCheck,
-  Landmark,
-  Fuel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { canAccess } from "@/lib/roles";
-import type { Role } from "@/types";
+import { canAccess, roleLabels } from "@/lib/roles";
+import { fullName, initials } from "@/lib/format";
+import type { Role, User } from "@/types";
 
-const navItems = [
-  { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/vehicles", label: "Flotte", icon: Car },
-  { href: "/drivers", label: "Conducteurs", icon: Users },
-  { href: "/maintenance", label: "Maintenance", icon: Wrench },
-  { href: "/tolls", label: "Péages", icon: Landmark },
-  { href: "/fuel", label: "Carburant", icon: Fuel },
-  { href: "/alerts", label: "Alertes", icon: Bell },
-  { href: "/settings", label: "Paramètres", icon: Settings },
+type NavItem = { href: string; label: string; icon: React.ElementType };
+
+const navGroups: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Pilotage",
+    items: [
+      { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      { href: "/alerts", label: "Alertes", icon: Bell },
+    ],
+  },
+  {
+    label: "Flotte",
+    items: [
+      { href: "/vehicles", label: "Véhicules", icon: Car },
+      { href: "/drivers", label: "Conducteurs", icon: Users },
+      { href: "/maintenance", label: "Maintenance", icon: Wrench },
+    ],
+  },
+  {
+    label: "Dépenses",
+    items: [
+      { href: "/fuel", label: "Carburant", icon: Fuel },
+      { href: "/tolls", label: "Péages", icon: Landmark },
+    ],
+  },
 ];
 
-function NavLink({ item }: { item: (typeof navItems)[number] }) {
-  const pathname = usePathname();
-  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+function Logo() {
   return (
-    <Link
-      href={item.href}
-      className={cn(
-        "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-        isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-      )}
-    >
-      {isActive && (
-        <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-      )}
-      <item.icon className={cn("h-5 w-5 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-      {item.label}
-    </Link>
-  );
-}
-
-export function Sidebar({ role, className }: { role: Role; className?: string }) {
-  return (
-    <div className={cn("flex h-full flex-col border-r border-sidebar-border bg-sidebar p-4", className)}>
-      <div className="mb-8 flex items-center gap-3 px-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-blue-600 text-primary-foreground shadow-lg shadow-primary/25">
-          <ShieldCheck className="h-6 w-6" />
-        </div>
-        <div>
-          <span className="block text-lg font-bold tracking-tight text-foreground">FlottAuto</span>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Fleet OS</span>
-        </div>
-      </div>
-      <nav className="flex flex-1 flex-col gap-1">
-        {navItems.filter((item) => canAccess(role, item.href)).map((item) => (
-          <NavLink key={item.href} item={item} />
-        ))}
-      </nav>
-      <div className="mt-6 rounded-2xl bg-gradient-to-br from-primary to-blue-600 p-4 text-primary-foreground shadow-lg shadow-primary/25">
-        <p className="text-xs font-medium opacity-90">Passez à Pro</p>
-        <p className="mt-1 text-[11px] opacity-80">Débloquez les rapports avancés et l&apos;IA.</p>
-        <button className="mt-3 w-full rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm transition hover:bg-white/30">
-          En savoir plus
-        </button>
+    <div className="flex items-center gap-2.5 px-2">
+      <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
+        <svg viewBox="0 0 24 24" fill="none" className="size-[18px]" aria-hidden>
+          <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M3 15.5h18v3H3z" fill="currentColor" />
+          <circle cx="7.5" cy="18.5" r="1.6" fill="var(--sidebar-primary)" stroke="currentColor" strokeWidth="1.4" />
+          <circle cx="16.5" cy="18.5" r="1.6" fill="var(--sidebar-primary)" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      </span>
+      <div className="leading-none">
+        <span className="block text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">FlottAuto</span>
+        <span className="mt-1 block text-[10px] font-medium tracking-[0.12em] text-sidebar-muted uppercase">Fleet OS</span>
       </div>
     </div>
   );
 }
 
-export function MobileSidebar({ role }: { role: Role }) {
+function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+  const pathname = usePathname();
+  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={isActive ? "page" : undefined}
+      className={cn(
+        "group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors",
+        isActive
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+      )}
+    >
+      {isActive && <span className="absolute top-2 bottom-2 -left-3 w-[3px] rounded-r-full bg-sidebar-primary" aria-hidden />}
+      <item.icon
+        className={cn(
+          "size-[18px] shrink-0 transition-colors",
+          isActive ? "text-sidebar-primary" : "text-sidebar-muted group-hover:text-sidebar-foreground"
+        )}
+      />
+      {item.label}
+    </Link>
+  );
+}
+
+export function Sidebar({ user, className, onNavigate }: { user: User; className?: string; onNavigate?: () => void }) {
+  const role: Role = user.role;
+  const groups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((item) => canAccess(role, item.href)) }))
+    .filter((g) => g.items.length > 0);
+  const settingsActive = canAccess(role, "/settings");
+
+  return (
+    <aside className={cn("flex h-full flex-col bg-sidebar text-sidebar-foreground", className)}>
+      <div className="flex h-16 shrink-0 items-center px-4">
+        <Logo />
+      </div>
+
+      <nav className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-3 py-4" aria-label="Navigation principale">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <p className="mb-1.5 px-2.5 text-[11px] font-medium tracking-wide text-sidebar-muted/80 uppercase">{group.label}</p>
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      <div className="space-y-1 border-t border-sidebar-border p-3">
+        {settingsActive && <NavLink item={{ href: "/settings", label: "Paramètres", icon: Settings }} onNavigate={onNavigate} />}
+        <div className="flex items-center gap-3 rounded-lg px-2.5 py-2">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground ring-1 ring-sidebar-border">
+            {initials(user.first_name, user.last_name, user.email)}
+          </span>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-[13px] font-medium text-sidebar-accent-foreground">{fullName(user)}</p>
+            <p className="truncate text-[11.5px] text-sidebar-muted">{roleLabels[user.role]}</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+export function MobileSidebar({ user }: { user: User }) {
   return (
     <Sheet>
-      <SheetTrigger>
-        <div className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-sm font-medium transition-colors hover:bg-muted md:hidden">
-          <Menu className="h-5 w-5" />
-          <span className="sr-only">Ouvrir le menu</span>
-        </div>
-      </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-0">
-        <Sidebar role={role} className="border-0" />
+      <SheetTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
+          >
+            <Menu className="size-5" />
+            <span className="sr-only">Ouvrir le menu</span>
+          </button>
+        }
+      />
+      <SheetContent side="left" className="w-72 border-0 p-0" showCloseButton={false}>
+        <Sidebar user={user} />
       </SheetContent>
     </Sheet>
   );

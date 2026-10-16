@@ -3,37 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Euro, FileDown, Plus, Search, SlidersHorizontal, Truck, Wrench } from "lucide-react";
+import { CheckCircle2, ChevronRight, CircleDollarSign, FileDown, Plus, Search, Timer, Wrench } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState, PageHeader, Panel, Plate, StatCard, StatusBadge, Toolbar } from "@/components/app/primitives";
 import { api, listVehicles } from "@/lib/api";
+import { workOrderStatus, workOrderType } from "@/lib/labels";
+import { formatDate, formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { Vehicle, WorkOrder } from "@/types";
 import { toast } from "sonner";
-
-const statusBadges: Record<string, { bg: string; text: string; label: string }> = {
-  opened: { bg: "bg-slate-100", text: "text-slate-700", label: "Ouvert" },
-  diagnosed: { bg: "bg-violet-50", text: "text-violet-700", label: "Diagnostiqué" },
-  in_progress: { bg: "bg-blue-50", text: "text-blue-700", label: "En cours" },
-  done: { bg: "bg-emerald-50", text: "text-emerald-700", label: "Terminé" },
-  validated: { bg: "bg-emerald-100", text: "text-emerald-800", label: "Validé" },
-};
-
-const typeLabels: Record<string, string> = {
-  preventive: "Préventif",
-  curative: "Curatif",
-};
 
 function escapeCsv(value: unknown) {
   const str = String(value ?? "").replace(/"/g, '""');
@@ -47,8 +30,8 @@ function exportWorkOrdersCsv(workOrders: WorkOrder[], vehicles: Vehicle[]) {
     return [
       wo.id,
       wo.title,
-      typeLabels[wo.type],
-      statusBadges[wo.status]?.label ?? wo.status,
+      workOrderType[wo.type],
+      workOrderStatus[wo.status]?.label ?? wo.status,
       vehicle ? `${vehicle.brand} ${vehicle.model}` : `Véhicule #${wo.vehicle_id}`,
       vehicle?.registration ?? "",
       wo.external_garage ?? "",
@@ -59,7 +42,7 @@ function exportWorkOrdersCsv(workOrders: WorkOrder[], vehicles: Vehicle[]) {
     ];
   });
   const csv = [headers.map(escapeCsv).join(";"), ...rows.map((r) => r.map(escapeCsv).join(";"))].join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -69,6 +52,8 @@ function exportWorkOrdersCsv(workOrders: WorkOrder[], vehicles: Vehicle[]) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+const ALL = "__all__";
 
 export default function MaintenancePage() {
   const router = useRouter();
@@ -83,10 +68,7 @@ export default function MaintenancePage() {
   async function loadWorkOrders() {
     setLoading(true);
     try {
-      const [orders, vehiclesRes] = await Promise.all([
-        api.get<WorkOrder[]>("/maintenance/work-orders"),
-        listVehicles(),
-      ]);
+      const [orders, vehiclesRes] = await Promise.all([api.get<WorkOrder[]>("/maintenance/work-orders"), listVehicles()]);
       setWorkOrders(orders);
       setVehicles(vehiclesRes.items);
     } catch (err: any) {
@@ -100,29 +82,34 @@ export default function MaintenancePage() {
     loadWorkOrders();
   }, []);
 
-  const filteredWorkOrders = useMemo(() => {
+  /** Ordres filtrés par recherche, type et véhicule (sans le statut) : sert aux compteurs des onglets. */
+  const baseFiltered = useMemo(() => {
     return workOrders.filter((wo) => {
       const matchesSearch =
         !search ||
         wo.title.toLowerCase().includes(search.toLowerCase()) ||
         wo.description?.toLowerCase().includes(search.toLowerCase()) ||
         false;
-      const matchesStatus = !statusFilter || wo.status === statusFilter;
       const matchesType = !typeFilter || wo.type === typeFilter;
       const matchesVehicle = !vehicleFilter || wo.vehicle_id === Number(vehicleFilter);
-      return matchesSearch && matchesStatus && matchesType && matchesVehicle;
+      return matchesSearch && matchesType && matchesVehicle;
     });
-  }, [workOrders, search, statusFilter, typeFilter, vehicleFilter]);
+  }, [workOrders, search, typeFilter, vehicleFilter]);
 
-  const totalCost = useMemo(
-    () => workOrders.reduce((sum, wo) => sum + Number(wo.total_cost || 0), 0),
-    [workOrders]
+  const filteredWorkOrders = useMemo(
+    () => (statusFilter ? baseFiltered.filter((wo) => wo.status === statusFilter) : baseFiltered),
+    [baseFiltered, statusFilter]
   );
 
-  const openCount = useMemo(
-    () => workOrders.filter((wo) => wo.status !== "validated").length,
-    [workOrders]
-  );
+  const statusCounts = useMemo(() => {
+    const c: Record<string, number> = { "": baseFiltered.length };
+    baseFiltered.forEach((wo) => (c[wo.status] = (c[wo.status] ?? 0) + 1));
+    return c;
+  }, [baseFiltered]);
+
+  const totalCost = useMemo(() => workOrders.reduce((sum, wo) => sum + Number(wo.total_cost || 0), 0), [workOrders]);
+
+  const openCount = useMemo(() => workOrders.filter((wo) => wo.status !== "validated").length, [workOrders]);
 
   const doneThisMonth = useMemo(
     () =>
@@ -136,195 +123,174 @@ export default function MaintenancePage() {
     [workOrders]
   );
 
+  const vehicleById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
+
+  const statusTabs: { value: string; label: string }[] = [
+    { value: "", label: "Tous" },
+    ...(Object.keys(workOrderStatus) as WorkOrder["status"][]).map((s) => ({ value: s, label: workOrderStatus[s].label })),
+  ];
+
+  const typeItems: Record<string, string> = { [ALL]: "Tous les types", ...workOrderType };
+  const vehicleItems: Record<string, string> = {
+    [ALL]: "Tous les véhicules",
+    ...Object.fromEntries(vehicles.map((v) => [String(v.id), `${v.registration} — ${v.brand} ${v.model}`])),
+  };
+
+  const hasFilters = !!(search || statusFilter || typeFilter || vehicleFilter);
+
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Maintenance</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{workOrders.length} ordre(s) de travail</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => exportWorkOrdersCsv(filteredWorkOrders, vehicles)}
-              disabled={!filteredWorkOrders.length}
-              className="h-10 gap-2 rounded-xl border-border/60 px-4"
-            >
-              <FileDown className="h-4 w-4" />
+      <PageHeader
+        title="Maintenance"
+        description={`${workOrders.length} ordre(s) de travail`}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => exportWorkOrdersCsv(filteredWorkOrders, vehicles)} disabled={!filteredWorkOrders.length}>
+              <FileDown className="size-4" />
               Exporter
             </Button>
-            <Link href="/maintenance/new">
-              <Button className="h-10 gap-2 rounded-xl px-5 shadow-md shadow-primary/20">
-                <Plus className="h-4 w-4" />
-                Nouvel ordre
-              </Button>
+            <Link href="/maintenance/new" className={buttonVariants()}>
+              <Plus className="size-4" />
+              Nouvel ordre
             </Link>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <Wrench className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total ordres</p>
-                <p className="text-2xl font-bold">{workOrders.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50">
-                <SlidersHorizontal className="h-6 w-6 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">En cours / ouverts</p>
-                <p className="text-2xl font-bold">{openCount}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-                <Wrench className="h-6 w-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Clôturés ce mois</p>
-                <p className="text-2xl font-bold">{doneThisMonth}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50">
-                <Euro className="h-6 w-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Coût total</p>
-                <p className="text-2xl font-bold">{totalCost.toLocaleString("fr-FR")} FCFA</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">Ordres de travail</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher un ordre..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-11 rounded-xl pl-10"
-                />
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v || "")}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Statut" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Tous les statuts</SelectItem>
-                    {Object.entries(statusBadges).map(([value, s]) => (
-                      <SelectItem key={value} value={value}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v || "")}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Tous les types</SelectItem>
-                    <SelectItem value="preventive">Préventif</SelectItem>
-                    <SelectItem value="curative">Curatif</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={vehicleFilter} onValueChange={(v) => setVehicleFilter(v || "")}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Véhicule" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Tous les véhicules</SelectItem>
-                    {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={String(v.id)}>
-                        {v.brand} {v.model} - {v.registration}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-xl" />
-                ))}
-              </div>
-            ) : filteredWorkOrders.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                Aucun ordre de travail trouvé.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-3 font-medium">Titre</th>
-                      <th className="pb-3 font-medium">Type</th>
-                      <th className="pb-3 font-medium">Statut</th>
-                      <th className="pb-3 font-medium">Véhicule</th>
-                      <th className="pb-3 font-medium">Garage</th>
-                      <th className="pb-3 font-medium text-right">Coût</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredWorkOrders.map((wo) => {
-                      const status = statusBadges[wo.status] ?? statusBadges.opened;
-                      const vehicle = vehicles.find((v) => v.id === wo.vehicle_id);
-                      return (
-                        <tr
-                          key={wo.id}
-                          onClick={() => router.push(`/maintenance/${wo.id}`)}
-                          className="cursor-pointer border-b last:border-0 transition-colors hover:bg-muted/40"
-                        >
-                          <td className="py-4 font-semibold">{wo.title}</td>
-                          <td className="py-4 text-muted-foreground">{typeLabels[wo.type]}</td>
-                          <td className="py-4">
-                            <Badge className={cn("rounded-lg border-0 px-2.5 py-0.5 font-medium", status.bg, status.text)}>
-                              {status.label}
-                            </Badge>
-                          </td>
-                          <td className="py-4">
-                            <div className="flex items-center gap-2">
-                              <Truck className="h-4 w-4 text-muted-foreground" />
-                              {vehicle ? `${vehicle.brand} ${vehicle.model}` : `Véhicule #${wo.vehicle_id}`}
-                            </div>
-                          </td>
-                          <td className="py-4 text-muted-foreground">{wo.external_garage || "—"}</td>
-                          <td className="py-4 text-right font-medium">
-                            {wo.total_cost ? `${Number(wo.total_cost).toLocaleString("fr-FR")} FCFA` : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total des ordres" value={loading ? "—" : workOrders.length} icon={Wrench} />
+        <StatCard label="Ouverts / en cours" value={loading ? "—" : openCount} hint="Non encore validés" icon={Timer} tone="warning" />
+        <StatCard label="Clôturés ce mois" value={loading ? "—" : doneThisMonth} icon={CheckCircle2} tone="success" />
+        <StatCard label="Coût total" value={loading ? "—" : formatMoney(totalCost)} icon={CircleDollarSign} />
       </div>
+
+      <Panel flush className="mt-6">
+        <Toolbar className="flex-wrap justify-between">
+          <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">
+            {statusTabs.map((f) => (
+              <button
+                key={f.value || "all"}
+                onClick={() => setStatusFilter(f.value)}
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
+                  statusFilter === f.value ? "bg-secondary text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                {f.label}
+                <span className="rounded bg-muted px-1.5 text-[11px] text-muted-foreground tabular">{statusCounts[f.value] ?? 0}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Select items={typeItems} value={typeFilter || ALL} onValueChange={(v) => setTypeFilter(!v || v === ALL ? "" : v)}>
+              <SelectTrigger className="h-9 sm:w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(typeItems).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select items={vehicleItems} value={vehicleFilter || ALL} onValueChange={(v) => setVehicleFilter(!v || v === ALL ? "" : v)}>
+              <SelectTrigger className="h-9 sm:w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Tous les véhicules</SelectItem>
+                {vehicles.map((v) => (
+                  <SelectItem key={v.id} value={String(v.id)}>
+                    {v.registration} — {v.brand} {v.model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative w-full sm:w-60">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground" />
+              <Input placeholder="Titre, description…" className="h-9 pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+          </div>
+        </Toolbar>
+
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : filteredWorkOrders.length === 0 ? (
+          <EmptyState
+            icon={Wrench}
+            title={hasFilters ? "Aucun ordre ne correspond" : "Aucun ordre de travail"}
+            description={hasFilters ? "Modifiez la recherche ou les filtres." : "Créez un ordre de travail pour suivre une intervention."}
+            action={
+              !hasFilters ? (
+                <Link href="/maintenance/new" className={buttonVariants()}>
+                  <Plus className="size-4" />
+                  Nouvel ordre
+                </Link>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Intervention</TableHead>
+                <TableHead>Véhicule</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="hidden lg:table-cell">Garage</TableHead>
+                <TableHead className="hidden md:table-cell">Créé le</TableHead>
+                <TableHead className="text-right">Coût</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredWorkOrders.map((wo) => {
+                const status = workOrderStatus[wo.status] ?? workOrderStatus.opened;
+                const vehicle = vehicleById.get(wo.vehicle_id);
+                return (
+                  <TableRow key={wo.id} className="group cursor-pointer" onClick={() => router.push(`/maintenance/${wo.id}`)}>
+                    <TableCell className="max-w-72">
+                      <Link
+                        href={`/maintenance/${wo.id}`}
+                        className="block truncate font-medium hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {wo.title}
+                      </Link>
+                      <p className="truncate text-xs text-muted-foreground">{workOrderType[wo.type]}</p>
+                    </TableCell>
+                    <TableCell>
+                      {vehicle ? (
+                        <div className="flex items-center gap-2.5">
+                          <Plate value={vehicle.registration} size="sm" />
+                          <span className="hidden truncate text-muted-foreground xl:inline">
+                            {vehicle.brand} {vehicle.model}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Véhicule #{wo.vehicle_id}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground lg:table-cell">{wo.external_garage || "—"}</TableCell>
+                    <TableCell className="hidden text-muted-foreground tabular md:table-cell">{formatDate(wo.created_at)}</TableCell>
+                    <TableCell className="text-right font-medium tabular">{wo.total_cost ? formatMoney(wo.total_cost) : "—"}</TableCell>
+                    <TableCell className="pr-4">
+                      <ChevronRight className="size-4 text-subtle-foreground transition-transform group-hover:translate-x-0.5" />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Panel>
     </AppShell>
   );
 }

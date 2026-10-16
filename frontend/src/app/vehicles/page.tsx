@@ -1,29 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileDown, Plus, Search, Car } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Car, ChevronRight, FileDown, Plus, Search } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
-import type { Vehicle, PaginatedResponse, VehicleStatus } from "@/types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState, PageHeader, Panel, Plate, SegmentButton, StatusBadge, Toolbar } from "@/components/app/primitives";
+import { api, assetUrl } from "@/lib/api";
+import { energyLabels, vehicleStatus, vehicleTypeLabels } from "@/lib/labels";
+import { formatNumber } from "@/lib/format";
+import type { PaginatedResponse, Vehicle, VehicleStatus } from "@/types";
 import { toast } from "sonner";
-
-const statusBadges: Record<VehicleStatus, { bg: string; text: string; label: string }> = {
-  available: { bg: "bg-emerald-50", text: "text-emerald-700", label: "Disponible" },
-  in_mission: { bg: "bg-blue-50", text: "text-blue-700", label: "En mission" },
-  in_maintenance: { bg: "bg-amber-50", text: "text-amber-700", label: "En maintenance" },
-  out_of_service: { bg: "bg-rose-50", text: "text-rose-700", label: "Hors service" },
-};
 
 function escapeCsv(value: unknown) {
   const str = String(value ?? "").replace(/"/g, '""');
-  return str.includes(",") || str.includes("\n") ? `"${str}"` : str;
+  return str.includes(";") || str.includes(",") || str.includes("\n") ? `"${str}"` : str;
 }
 
 function exportVehiclesCsv(vehicles: Vehicle[]) {
@@ -47,18 +42,18 @@ function exportVehiclesCsv(vehicles: Vehicle[]) {
     v.registration,
     v.brand,
     v.model,
-    v.vehicle_type,
-    v.energy,
+    vehicleTypeLabels[v.vehicle_type] ?? v.vehicle_type,
+    energyLabels[v.energy] ?? v.energy,
     v.year ?? "",
     v.vin ?? "",
     v.mileage,
-    statusBadges[v.status]?.label ?? v.status,
+    vehicleStatus[v.status]?.label ?? v.status,
     v.first_registration_date ?? "",
     v.purchase_price ?? "",
     v.notes ?? "",
   ]);
   const csv = [headers.map(escapeCsv).join(";"), ...rows.map((r) => r.map(escapeCsv).join(";"))].join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -69,16 +64,20 @@ function exportVehiclesCsv(vehicles: Vehicle[]) {
   URL.revokeObjectURL(url);
 }
 
+type StatusFilter = VehicleStatus | "all";
+
 export default function VehiclesPage() {
+  const router = useRouter();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
 
   async function loadVehicles() {
     setLoading(true);
     try {
-      const res = await api.get<PaginatedResponse<Vehicle>>(`/vehicles?q=${encodeURIComponent(q)}`);
+      const res = await api.get<PaginatedResponse<Vehicle>>(`/vehicles?size=100&q=${encodeURIComponent(q)}`);
       setVehicles(res.items);
       setTotal(res.total);
     } catch (err: any) {
@@ -92,109 +91,128 @@ export default function VehiclesPage() {
     loadVehicles();
   }, [q]);
 
+  const counts = useMemo(() => {
+    const c: Record<StatusFilter, number> = { all: vehicles.length, available: 0, in_mission: 0, in_maintenance: 0, out_of_service: 0 };
+    vehicles.forEach((v) => (c[v.status] += 1));
+    return c;
+  }, [vehicles]);
+
+  const visible = status === "all" ? vehicles : vehicles.filter((v) => v.status === status);
+  const filters: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: "Tous" },
+    ...(Object.keys(vehicleStatus) as VehicleStatus[]).map((s) => ({ value: s, label: vehicleStatus[s].label })),
+  ];
+
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Flotte</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{total} véhicule(s) enregistrés</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => exportVehiclesCsv(vehicles)}
-              disabled={!vehicles.length}
-              className="h-10 gap-2 rounded-xl border-border/60 px-4"
-            >
-              <FileDown className="h-4 w-4" />
+      <PageHeader
+        title="Véhicules"
+        description={`${total} véhicule(s) dans votre flotte`}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => exportVehiclesCsv(visible)} disabled={!visible.length}>
+              <FileDown className="size-4" />
               Exporter
             </Button>
-            <Link href="/vehicles/new">
-              <Button className="h-10 gap-2 rounded-xl px-5 shadow-md shadow-primary/20">
-                <Plus className="h-4 w-4" />
-                Nouveau véhicule
-              </Button>
+            <Link href="/vehicles/new" className={buttonVariants()}>
+              <Plus className="size-4" />
+              Nouveau véhicule
             </Link>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-lg font-semibold">Liste des véhicules</CardTitle>
-            <div className="relative max-w-xs">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Rechercher un véhicule..."
-                className="h-10 w-full rounded-xl border-border/60 bg-muted/50 pl-9 text-sm focus-visible:bg-background"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-14 w-full rounded-xl" />
-                ))}
-              </div>
-            ) : vehicles.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                Aucun véhicule trouvé.
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {vehicles.map((vehicle) => (
-                    <Link key={vehicle.id} href={`/vehicles/${vehicle.id}`} className="block">
-                      <Card className="group cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm shadow-black/5 transition-all hover:-translate-y-1 hover:shadow-lg">
-                        <div className="relative h-40 overflow-hidden bg-gradient-to-br from-muted to-muted/60">
-                          {vehicle.photo_url ? (
-                            <img
-                              src={vehicle.photo_url.startsWith("http") ? vehicle.photo_url : `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "")}${vehicle.photo_url}`}
-                              alt={`${vehicle.brand} ${vehicle.model}`}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            />
+      <Panel flush>
+        <Toolbar className="justify-between">
+          <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">
+            {filters.map((f) => (
+              <SegmentButton key={f.value} active={status === f.value} onClick={() => setStatus(f.value)} count={counts[f.value]}>
+                {f.label}
+              </SegmentButton>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground" />
+            <Input placeholder="Immatriculation, marque, modèle…" className="h-9 pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+        </Toolbar>
+
+        {loading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon={Car}
+            title={q || status !== "all" ? "Aucun véhicule ne correspond" : "Aucun véhicule"}
+            description={q || status !== "all" ? "Modifiez la recherche ou le filtre." : "Ajoutez votre premier véhicule pour commencer."}
+            action={
+              !q && status === "all" ? (
+                <Link href="/vehicles/new" className={buttonVariants()}>
+                  <Plus className="size-4" />
+                  Nouveau véhicule
+                </Link>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Véhicule</TableHead>
+                <TableHead className="hidden sm:table-cell">Immatriculation</TableHead>
+                <TableHead className="hidden md:table-cell">Type</TableHead>
+                <TableHead className="hidden lg:table-cell">Énergie</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Kilométrage</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((v) => {
+                const photo = assetUrl(v.photo_url);
+                return (
+                  <TableRow key={v.id} className="group cursor-pointer" onClick={() => router.push(`/vehicles/${v.id}`)}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-surface-sunken text-subtle-foreground">
+                          {photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={photo} alt="" className="size-full object-cover" />
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                              <Car className="h-12 w-12 opacity-40" />
-                            </div>
+                            <Car className="size-4" />
                           )}
-                          <Badge
-                            className={cn(
-                              "absolute top-3 right-3 rounded-lg border-0 px-2.5 py-0.5 font-medium",
-                              statusBadges[vehicle.status].bg,
-                              statusBadges[vehicle.status].text,
-                            )}
-                          >
-                            {statusBadges[vehicle.status].label}
-                          </Badge>
+                        </span>
+                        <div className="min-w-0">
+                          <Link href={`/vehicles/${v.id}`} className="block truncate font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                            {v.brand} {v.model}
+                          </Link>
+                          <p className="hidden text-xs text-muted-foreground sm:block">{v.year ?? "Année inconnue"}</p>
+                          <Plate value={v.registration} size="sm" className="mt-1 sm:hidden" />
                         </div>
-                        <CardContent className="space-y-2 p-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="font-semibold">{vehicle.brand} {vehicle.model}</h3>
-                              <p className="text-sm text-muted-foreground">{vehicle.registration}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between text-sm text-muted-foreground">
-                            <span className="capitalize">{vehicle.vehicle_type}</span>
-                            <span>{vehicle.mileage.toLocaleString()} km</span>
-                          </div>
-                          {vehicle.year && (
-                            <p className="text-xs text-muted-foreground">Année : {vehicle.year}</p>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  ))}
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Plate value={v.registration} />
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground md:table-cell">{vehicleTypeLabels[v.vehicle_type] ?? v.vehicle_type}</TableCell>
+                    <TableCell className="hidden text-muted-foreground lg:table-cell">{energyLabels[v.energy] ?? v.energy}</TableCell>
+                    <TableCell className="hidden text-right font-medium sm:table-cell">{formatNumber(v.mileage, "km")}</TableCell>
+                    <TableCell>
+                      <StatusBadge tone={vehicleStatus[v.status].tone}>{vehicleStatus[v.status].label}</StatusBadge>
+                    </TableCell>
+                    <TableCell className="pr-4">
+                      <ChevronRight className="size-4 text-subtle-foreground transition-transform group-hover:translate-x-0.5" />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Panel>
     </AppShell>
   );
 }

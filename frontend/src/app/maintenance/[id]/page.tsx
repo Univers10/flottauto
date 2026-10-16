@@ -1,56 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Calendar, Camera, CheckCircle2, Clock, FileText, Save, Trash2, Truck, Wrench, X } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Car, Check, ImageIcon, ImagePlus, Save, Trash2 } from "lucide-react";
+import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-import { useCurrentUser } from "@/components/layout/app-shell";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DetailList, EmptyState, Field, PageHeader, Panel, Plate, StatusBadge } from "@/components/app/primitives";
 import { canDeleteWorkOrders } from "@/lib/roles";
-import { api, deleteWorkOrder, deleteWorkOrderPhoto, getVehicle, updateWorkOrder, uploadWorkOrderPhoto } from "@/lib/api";
+import { api, assetUrl, deleteWorkOrder, deleteWorkOrderPhoto, getVehicle, updateWorkOrder, uploadWorkOrderPhoto } from "@/lib/api";
+import { workOrderStatus, workOrderType } from "@/lib/labels";
+import { formatDate, formatMoney, formatNumber, fullName } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Vehicle, WorkOrder } from "@/types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+const statusFlow: WorkOrder["status"][] = ["opened", "diagnosed", "in_progress", "done", "validated"];
 
-const statusBadges: Record<string, { bg: string; text: string; label: string }> = {
-  opened: { bg: "bg-slate-100", text: "text-slate-700", label: "Ouvert" },
-  diagnosed: { bg: "bg-violet-50", text: "text-violet-700", label: "Diagnostiqué" },
-  in_progress: { bg: "bg-blue-50", text: "text-blue-700", label: "En cours" },
-  done: { bg: "bg-emerald-50", text: "text-emerald-700", label: "Terminé" },
-  validated: { bg: "bg-emerald-100", text: "text-emerald-800", label: "Validé" },
-};
-
-const typeLabels: Record<string, string> = {
-  preventive: "Préventif",
-  curative: "Curatif",
-};
-
-const statusFlow = ["opened", "diagnosed", "in_progress", "done", "validated"];
+const statusItems: Record<string, string> = Object.fromEntries(statusFlow.map((s) => [s, workOrderStatus[s].label]));
 
 // Rendu sous AppShell pour accéder à l'utilisateur connecté.
 function DeleteWorkOrderButton({ onClick }: { onClick: () => void }) {
   const currentUser = useCurrentUser();
   if (!currentUser || !canDeleteWorkOrders(currentUser.role)) return null;
   return (
-    <Button variant="outline" size="icon" onClick={onClick} className="rounded-xl border-border/60 text-muted-foreground hover:text-destructive">
-      <Trash2 className="h-4 w-4" />
+    <Button variant="destructive" onClick={onClick}>
+      <Trash2 className="size-4" />
+      Supprimer
     </Button>
+  );
+}
+
+function StatusStepper({ current }: { current: WorkOrder["status"] }) {
+  const currentIndex = statusFlow.indexOf(current);
+  return (
+    <ol className="flex items-start" aria-label="Avancement de l'intervention">
+      {statusFlow.map((step, idx) => {
+        const done = idx < currentIndex;
+        const active = idx === currentIndex;
+        return (
+          <Fragment key={step}>
+            <li className="flex w-20 shrink-0 flex-col items-center gap-2 text-center sm:w-24" aria-current={active ? "step" : undefined}>
+              <span
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-full border text-xs font-semibold tabular transition-colors",
+                  done && "border-primary bg-primary-subtle text-primary",
+                  active && "border-primary bg-primary text-primary-foreground ring-4 ring-primary/15",
+                  !done && !active && "border-border bg-card text-subtle-foreground"
+                )}
+              >
+                {done ? <Check className="size-4" /> : idx + 1}
+              </span>
+              <span
+                className={cn(
+                  "text-xs leading-tight",
+                  active ? "font-semibold text-foreground" : done ? "font-medium text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {workOrderStatus[step].label}
+              </span>
+            </li>
+            {idx < statusFlow.length - 1 && (
+              <li aria-hidden className={cn("mt-4 h-px min-w-4 flex-1 -translate-y-px", idx < currentIndex ? "bg-primary" : "bg-border")} />
+            )}
+          </Fragment>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -123,9 +143,7 @@ export default function WorkOrderDetailPage() {
     if (!confirm("Supprimer cette photo ?")) return;
     try {
       await deleteWorkOrderPhoto(workOrderId, photoId);
-      setWorkOrder((prev) =>
-        prev ? { ...prev, photos: prev.photos?.filter((p) => p.id !== photoId) || [] } : null
-      );
+      setWorkOrder((prev) => (prev ? { ...prev, photos: prev.photos?.filter((p) => p.id !== photoId) || [] } : null));
       toast.success("Photo supprimée");
     } catch (err: any) {
       toast.error(err.message || "Erreur de suppression");
@@ -140,20 +158,14 @@ export default function WorkOrderDetailPage() {
     if (!workOrder) return;
     setSaving(true);
     try {
-      const updated = await updateWorkOrder(
-        workOrder.id,
-        {
-          status: status as WorkOrder["status"],
-          title,
-          total_cost: totalCost ? Number(totalCost) : null,
-          description,
-          external_garage: externalGarage || null,
-          completed_at:
-            status === "validated" && !workOrder.completed_at
-              ? new Date().toISOString()
-              : workOrder.completed_at,
-        } as Partial<WorkOrder>
-      );
+      const updated = await updateWorkOrder(workOrder.id, {
+        status: status as WorkOrder["status"],
+        title,
+        total_cost: totalCost ? Number(totalCost) : null,
+        description,
+        external_garage: externalGarage || null,
+        completed_at: status === "validated" && !workOrder.completed_at ? new Date().toISOString() : workOrder.completed_at,
+      } as Partial<WorkOrder>);
       setWorkOrder(updated);
       toast.success("Ordre de travail mis à jour");
     } catch (err: any) {
@@ -178,278 +190,199 @@ export default function WorkOrderDetailPage() {
   if (loading || !workOrder) {
     return (
       <AppShell>
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-64 w-full" />
+        <div className="space-y-2 pb-6">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-8 w-72" />
+        </div>
+        <div className="grid gap-6 xl:grid-cols-3">
+          <div className="space-y-6 xl:col-span-2">
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-96 w-full rounded-xl" />
+          </div>
+          <div className="space-y-6">
+            <Skeleton className="h-44 w-full rounded-xl" />
+            <Skeleton className="h-56 w-full rounded-xl" />
+          </div>
         </div>
       </AppShell>
     );
   }
 
-  const statusBadge = statusBadges[workOrder.status] ?? statusBadges.opened;
-  const currentStatusIndex = statusFlow.indexOf(workOrder.status);
+  const statusDef = workOrderStatus[workOrder.status] ?? workOrderStatus.opened;
+  const photos = workOrder.photos ?? [];
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/maintenance">
-              <Button variant="ghost" size="icon" className="rounded-xl">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{workOrder.title}</h1>
-              <p className="text-sm text-muted-foreground">
-                {typeLabels[workOrder.type]} · {new Date(workOrder.created_at).toLocaleDateString("fr-FR")}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge className={cn("rounded-lg border-0 px-3 py-1 font-medium", statusBadge.bg, statusBadge.text)}>
-              {statusBadge.label}
-            </Badge>
+      <PageHeader
+        breadcrumb={[{ label: "Maintenance", href: "/maintenance" }, { label: workOrder.title }]}
+        title={workOrder.title}
+        description={`${workOrderType[workOrder.type]} · ouvert le ${formatDate(workOrder.created_at, "long")}`}
+        actions={
+          <>
+            <StatusBadge tone={statusDef.tone}>{statusDef.label}</StatusBadge>
             <DeleteWorkOrderButton onClick={remove} />
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="lg:col-span-2 rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Suivi d&apos;intervention</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="relative flex justify-between">
-                {statusFlow.map((step, idx) => {
-                  const stepIndex = idx;
-                  const active = stepIndex <= currentStatusIndex;
-                  return (
-                    <div key={step} className="relative flex flex-1 flex-col items-center">
-                      <div
-                        className={cn(
-                          "z-10 flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-bold",
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-muted bg-card text-muted-foreground"
-                        )}
-                      >
-                        {stepIndex < currentStatusIndex ? <CheckCircle2 className="h-5 w-5" /> : idx + 1}
-                      </div>
-                      <span className={cn("mt-2 text-xs font-medium", active ? "text-foreground" : "text-muted-foreground")}>
-                        {statusBadges[step].label}
-                      </span>
-                      {idx < statusFlow.length - 1 && (
-                        <div
-                          className={cn(
-                            "absolute top-5 left-1/2 h-0.5 w-full -translate-y-1/2",
-                            stepIndex < currentStatusIndex ? "bg-primary" : "bg-muted"
-                          )}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
+          <Panel title="Avancement" description="Étape enregistrée de l'intervention.">
+            <div className="scrollbar-thin overflow-x-auto pb-1">
+              <StatusStepper current={workOrder.status} />
+            </div>
+          </Panel>
 
-              <div className="space-y-2">
-                <Label htmlFor="title">Titre</Label>
+          <Panel title="Détails de l'intervention" description="Modifiez le statut, le coût et les notes, puis enregistrez.">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Titre" htmlFor="title" className="sm:col-span-2">
                 <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre de l'intervention" />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="status">Statut</Label>
-                  <Select value={status} onValueChange={(v) => setStatus(v || "")}>
-                    <SelectTrigger id="status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusFlow.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {statusBadges[s].label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cost">Coût total (FCFA)</Label>
-                  <Input
-                    id="cost"
-                    type="number"
-                    value={totalCost}
-                    onChange={(e) => setTotalCost(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="garage">Garage / Technicien externe</Label>
+              </Field>
+              <Field label="Statut" htmlFor="status">
+                <Select items={statusItems} value={status} onValueChange={(v) => setStatus(v || "")}>
+                  <SelectTrigger id="status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusFlow.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {workOrderStatus[s].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Coût total (FCFA)" htmlFor="cost">
+                <Input
+                  id="cost"
+                  type="number"
+                  className="tabular"
+                  value={totalCost}
+                  onChange={(e) => setTotalCost(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <Field label="Garage / technicien externe" htmlFor="garage" className="sm:col-span-2">
                 <Input
                   id="garage"
                   value={externalGarage}
                   onChange={(e) => setExternalGarage(e.target.value)}
                   placeholder="Nom du garage ou technicien"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Notes / Description</Label>
+              </Field>
+              <Field label="Notes / description" htmlFor="description" className="sm:col-span-2">
                 <Textarea
                   id="description"
                   value={description}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
                   rows={5}
-                  placeholder="Détails de l'intervention, pièces remplacées..."
+                  placeholder="Détails de l'intervention, pièces remplacées…"
                 />
-              </div>
+              </Field>
+            </div>
+            <div className="-mx-5 mt-6 -mb-5 flex justify-end gap-2 border-t bg-surface-sunken px-5 py-4">
+              <Button onClick={save} disabled={saving}>
+                <Save className="size-4" />
+                {saving ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </div>
+          </Panel>
 
-              <div className="space-y-4 rounded-2xl border border-border/60 p-4">
-                <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Camera className="h-4 w-4" />
-                  Photos
-                </h3>
-                <form onSubmit={handlePhotoUpload} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <div className="flex-1 space-y-2">
-                    <Label htmlFor="photo">Ajouter des photos</Label>
-                    <Input id="photo" name="file" type="file" accept="image/*" multiple />
-                  </div>
-                  <div className="flex-[2] space-y-2">
-                    <Label htmlFor="caption">Légende</Label>
-                    <Input
-                      id="caption"
-                      value={photoCaption}
-                      onChange={(e) => setPhotoCaption(e.target.value)}
-                      placeholder="Vue moteur, pièce remplacée..."
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={photoUploading}
-                    className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25"
-                  >
-                    <Camera className="h-4 w-4" />
-                    {photoUploading ? "Envoi..." : "Ajouter"}
-                  </Button>
-                </form>
-                {(workOrder.photos?.length || 0) > 0 ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {workOrder.photos?.map((photo) => (
-                      <div key={photo.id} className="group relative overflow-hidden rounded-xl border border-border/60">
-                        <img
-                          src={photo.file_url.startsWith("http") ? photo.file_url : `${API_BASE_URL}${photo.file_url}`}
-                          alt={photo.caption || "Photo"}
-                          className="aspect-square w-full object-cover"
-                        />
-                        {photo.caption && (
-                          <p className="absolute bottom-0 left-0 right-0 truncate bg-black/50 px-2 py-1 text-xs text-white">
-                            {photo.caption}
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => deletePhoto(photo.id)}
-                          className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                    Aucune photo.
-                  </div>
-                )}
-              </div>
+          <Panel
+            title="Photos"
+            description={photos.length ? `${photos.length} photo(s) jointe(s)` : "Aucune photo jointe pour le moment."}
+          >
+            <form onSubmit={handlePhotoUpload} className="grid gap-3 sm:grid-cols-[1fr_1.5fr_auto] sm:items-end">
+              <Field label="Fichiers" htmlFor="photo">
+                <Input id="photo" name="file" type="file" accept="image/*" multiple />
+              </Field>
+              <Field label="Légende" htmlFor="caption">
+                <Input
+                  id="caption"
+                  value={photoCaption}
+                  onChange={(e) => setPhotoCaption(e.target.value)}
+                  placeholder="Vue moteur, pièce remplacée…"
+                />
+              </Field>
+              <Button type="submit" variant="outline" disabled={photoUploading} className="h-10">
+                <ImagePlus className="size-4" />
+                {photoUploading ? "Envoi…" : "Ajouter"}
+              </Button>
+            </form>
 
-              <div className="flex justify-end gap-3">
-                <Button onClick={save} disabled={saving} className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25">
-                  <Save className="h-4 w-4" />
-                  {saving ? "Sauvegarde..." : "Enregistrer"}
-                </Button>
+            {photos.length > 0 ? (
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {photos.map((photo) => (
+                  <figure key={photo.id} className="group overflow-hidden rounded-lg border bg-card">
+                    <div className="relative bg-surface-sunken">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={assetUrl(photo.file_url) ?? ""} alt={photo.caption || "Photo"} className="aspect-square w-full object-cover" />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => deletePhoto(photo.id)}
+                        aria-label="Supprimer la photo"
+                        className="absolute top-1.5 right-1.5 bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                    {photo.caption && (
+                      <figcaption className="truncate border-t px-2.5 py-1.5 text-xs text-muted-foreground">{photo.caption}</figcaption>
+                    )}
+                  </figure>
+                ))}
               </div>
-            </CardContent>
-          </Card>
+            ) : (
+              <EmptyState icon={ImageIcon} title="Aucune photo" description="Ajoutez des photos du véhicule ou des pièces." className="mt-5 rounded-lg border border-dashed bg-surface-sunken py-8" />
+            )}
+          </Panel>
+        </div>
 
-          <div className="space-y-5">
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Truck className="h-5 w-5 text-primary" />
-                  Véhicule
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {vehicle ? (
-                  <div className="space-y-3">
-                    <p className="text-lg font-semibold">
+        <div className="space-y-6">
+          <Panel title="Véhicule">
+            {vehicle ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-surface-sunken text-subtle-foreground">
+                    <Car className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
                       {vehicle.brand} {vehicle.model}
                     </p>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="h-4 w-4" />
-                      {vehicle.registration}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      {vehicle.mileage.toLocaleString("fr-FR")} km
-                    </div>
-                    <Link href={`/vehicles/${vehicle.id}`}>
-                      <Button variant="outline" className="mt-2 w-full rounded-xl">
-                        Voir la fiche
-                      </Button>
-                    </Link>
+                    <p className="text-xs text-muted-foreground tabular">{formatNumber(vehicle.mileage, "km")}</p>
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Véhicule #{workOrder.vehicle_id}</p>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+                <Plate value={vehicle.registration} size="lg" />
+                <Link href={`/vehicles/${vehicle.id}`} className={cn(buttonVariants({ variant: "outline" }), "w-full")}>
+                  Voir la fiche véhicule
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Véhicule #{workOrder.vehicle_id}</p>
+            )}
+          </Panel>
 
-            <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                  <Calendar className="h-5 w-5 text-primary" />
-                  Dates
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Création</span>
-                  <span className="font-medium">{new Date(workOrder.created_at).toLocaleDateString("fr-FR")}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Saisi par</span>
-                  <span className="font-medium">
-                    {workOrder.created_by
-                      ? `${workOrder.created_by.first_name ?? ""} ${workOrder.created_by.last_name ?? ""}`.trim() || workOrder.created_by.email
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Début</span>
-                  <span className="font-medium">
-                    {workOrder.started_at ? new Date(workOrder.started_at).toLocaleDateString("fr-FR") : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Clôture</span>
-                  <span className="font-medium">
-                    {workOrder.completed_at ? new Date(workOrder.completed_at).toLocaleDateString("fr-FR") : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Kilométrage constaté</span>
-                  <span className="font-medium">
-                    {workOrder.mileage_at_creation ? `${Number(workOrder.mileage_at_creation).toLocaleString("fr-FR")} km` : "—"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <Panel title="Informations">
+            <DetailList
+              items={[
+                { label: "Type", value: workOrderType[workOrder.type] },
+                { label: "Création", value: formatDate(workOrder.created_at) },
+                { label: "Saisi par", value: workOrder.created_by ? fullName(workOrder.created_by) : "—" },
+                { label: "Début", value: formatDate(workOrder.started_at) },
+                { label: "Clôture", value: formatDate(workOrder.completed_at) },
+                { label: "Kilométrage constaté", value: formatNumber(workOrder.mileage_at_creation || null, "km") },
+              ]}
+            />
+          </Panel>
+
+          <Panel title="Coûts">
+            <p className="text-[13px] font-medium text-muted-foreground">Coût total enregistré</p>
+            <p className="mt-1.5 text-2xl font-semibold tracking-tight tabular">{formatMoney(workOrder.total_cost)}</p>
+            <DetailList className="mt-4 border-t pt-3" items={[{ label: "Garage", value: workOrder.external_garage || "—" }]} />
+          </Panel>
         </div>
       </div>
     </AppShell>

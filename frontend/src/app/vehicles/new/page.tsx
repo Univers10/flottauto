@@ -1,49 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Car, ImagePlus, Loader2, Save, X } from "lucide-react";
+import { ImagePlus, Loader2, Save, X } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Field, FormSection, PageHeader, Panel } from "@/components/app/primitives";
 import { api, uploadVehiclePhoto } from "@/lib/api";
+import { energyLabels, vehicleStatus, vehicleTypeLabels } from "@/lib/labels";
+import { fullName } from "@/lib/format";
 import { toast } from "sonner";
-import type { Driver, Vehicle } from "@/types";
+import type { Driver, Vehicle, VehicleStatus } from "@/types";
 
-const vehicleTypes = [
-  { value: "car", label: "Voiture" },
-  { value: "van", label: "Camionnette" },
-  { value: "truck", label: "Camion" },
-  { value: "bus", label: "Bus" },
-  { value: "motorcycle", label: "Moto" },
-  { value: "other", label: "Autre" },
-];
-
-const energyTypes = [
-  { value: "diesel", label: "Diesel" },
-  { value: "petrol", label: "Essence" },
-  { value: "electric", label: "Électrique" },
-  { value: "hybrid", label: "Hybride" },
-  { value: "lpg", label: "GPL" },
-  { value: "other", label: "Autre" },
-];
-
-const statusTypes = [
-  { value: "available", label: "Disponible" },
-  { value: "in_mission", label: "En mission" },
-  { value: "in_maintenance", label: "En maintenance" },
-  { value: "out_of_service", label: "Hors service" },
-];
+const statusItems = Object.fromEntries(
+  (Object.keys(vehicleStatus) as VehicleStatus[]).map((s) => [s, vehicleStatus[s].label])
+) as Record<string, string>;
 
 export default function NewVehiclePage() {
   const router = useRouter();
@@ -73,6 +48,11 @@ export default function NewVehiclePage() {
       .then(setDrivers)
       .catch(() => toast.error("Erreur de chargement des chauffeurs"));
   }, []);
+
+  const driverItems = useMemo(
+    () => ({ "": "Aucun chauffeur", ...Object.fromEntries(drivers.map((d) => [String(d.id), fullName(d)])) }),
+    [drivers]
+  );
 
   function update(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -126,180 +106,127 @@ export default function NewVehiclePage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push("/vehicles")}
-            className="rounded-xl"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Nouveau véhicule</h1>
-            <p className="text-sm text-muted-foreground">Renseignez les informations du véhicule</p>
-          </div>
-        </div>
+      <div className="mx-auto max-w-4xl">
+        <PageHeader
+          title="Nouveau véhicule"
+          description="Renseignez les informations du véhicule à ajouter à la flotte."
+          breadcrumb={[{ label: "Véhicules", href: "/vehicles" }, { label: "Nouveau véhicule" }]}
+        />
 
         <form onSubmit={handleSubmit}>
-          <Card className="rounded-2xl border-none bg-card shadow-sm shadow-black/5">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold">Informations générales</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label>Photo du véhicule</Label>
-                {photoPreview ? (
-                  <div className="relative h-48 overflow-hidden rounded-2xl border border-border/60 bg-muted/40">
-                    <img src={photoPreview} alt="Aperçu" className="h-full w-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={removePhoto}
-                      className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-xl bg-card/90 text-foreground shadow-sm ring-1 ring-border/60 backdrop-blur transition-colors hover:bg-rose-50 hover:text-rose-600"
-                      title="Retirer la photo"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/60 bg-muted/20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted/40">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                      {photo ? (
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                      ) : (
-                        <ImagePlus className="h-6 w-6 text-primary" />
-                      )}
-                    </span>
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <Car className="h-4 w-4" />
-                      Cliquez pour choisir une photo
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handlePhotoChange}
-                    />
-                  </label>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="registration">Immatriculation *</Label>
+          <Panel>
+            <div className="divide-y">
+              <FormSection title="Identification" description="Plaque, marque et modèle sont obligatoires.">
+                <Field label="Immatriculation" htmlFor="registration" required>
                   <Input
                     id="registration"
                     required
+                    placeholder="AB-123-CD"
+                    className="font-mono uppercase"
                     value={form.registration}
                     onChange={(e) => update("registration", e.target.value)}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="vin">VIN</Label>
-                  <Input id="vin" value={form.vin} onChange={(e) => update("vin", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="brand">Marque *</Label>
-                  <Input
-                    id="brand"
-                    required
-                    value={form.brand}
-                    onChange={(e) => update("brand", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="model">Modèle *</Label>
-                  <Input
-                    id="model"
-                    required
-                    value={form.model}
-                    onChange={(e) => update("model", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="year">Année</Label>
-                  <Input
-                    id="year"
-                    type="number"
-                    value={form.year}
-                    onChange={(e) => update("year", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Type de véhicule</Label>
-                  <Select value={form.vehicle_type} onValueChange={(v) => { if (v) update("vehicle_type", v); }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vehicleTypes.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Énergie</Label>
-                  <Select value={form.energy} onValueChange={(v) => { if (v) update("energy", v); }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {energyTypes.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mileage">Kilométrage</Label>
-                  <Input
-                    id="mileage"
-                    type="number"
-                    value={form.mileage}
-                    onChange={(e) => update("mileage", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Statut</Label>
-                  <Select value={form.status} onValueChange={(v) => { if (v) update("status", v); }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusTypes.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="first_registration_date">Date de 1ère mise en circulation</Label>
+                </Field>
+                <Field label="VIN" htmlFor="vin" hint="Numéro de série à 17 caractères.">
+                  <Input id="vin" className="font-mono" value={form.vin} onChange={(e) => update("vin", e.target.value)} />
+                </Field>
+                <Field label="Marque" htmlFor="brand" required>
+                  <Input id="brand" required value={form.brand} onChange={(e) => update("brand", e.target.value)} />
+                </Field>
+                <Field label="Modèle" htmlFor="model" required>
+                  <Input id="model" required value={form.model} onChange={(e) => update("model", e.target.value)} />
+                </Field>
+                <Field label="Année" htmlFor="year">
+                  <Input id="year" type="number" value={form.year} onChange={(e) => update("year", e.target.value)} />
+                </Field>
+                <Field label="Date de 1ʳᵉ mise en circulation" htmlFor="first_registration_date">
                   <Input
                     id="first_registration_date"
                     type="date"
                     value={form.first_registration_date}
                     onChange={(e) => update("first_registration_date", e.target.value)}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="purchase_price">Prix d&apos;achat (FCFA)</Label>
-                  <Input
-                    id="purchase_price"
-                    type="number"
-                    value={form.purchase_price}
-                    onChange={(e) => update("purchase_price", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Chauffeur affecté</Label>
-                  <Select value={form.driver_id} onValueChange={(v) => update("driver_id", v || "")}>
+                </Field>
+              </FormSection>
+
+              <FormSection title="Caractéristiques" description="Type, motorisation et état actuel du véhicule.">
+                <Field label="Type de véhicule">
+                  <Select
+                    items={vehicleTypeLabels}
+                    value={form.vehicle_type}
+                    onValueChange={(v) => {
+                      if (v) update("vehicle_type", v);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(vehicleTypeLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Énergie">
+                  <Select
+                    items={energyLabels}
+                    value={form.energy}
+                    onValueChange={(v) => {
+                      if (v) update("energy", v);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(energyLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Kilométrage" htmlFor="mileage">
+                  <div className="relative">
+                    <Input
+                      id="mileage"
+                      type="number"
+                      className="pr-10 tabular"
+                      value={form.mileage}
+                      onChange={(e) => update("mileage", e.target.value)}
+                    />
+                    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-subtle-foreground">km</span>
+                  </div>
+                </Field>
+                <Field label="Statut">
+                  <Select
+                    items={statusItems}
+                    value={form.status}
+                    onValueChange={(v) => {
+                      if (v) update("status", v);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(statusItems).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </FormSection>
+
+              <FormSection title="Affectation et achat" description="Chauffeur attitré et valeur d'acquisition.">
+                <Field label="Chauffeur affecté">
+                  <Select items={driverItems} value={form.driver_id} onValueChange={(v) => update("driver_id", v || "")}>
                     <SelectTrigger>
                       <SelectValue placeholder="Aucun chauffeur" />
                     </SelectTrigger>
@@ -312,36 +239,70 @@ export default function NewVehiclePage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={form.notes}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => update("notes", e.target.value)}
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => router.push("/vehicles")}
-                  className="h-11 rounded-xl border-border/60 px-5"
-                >
-                  Annuler
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="h-11 gap-2 rounded-xl bg-gradient-to-r from-primary to-blue-600 px-5 shadow-lg shadow-primary/25"
-                >
-                  <Save className="h-4 w-4" />
-                  {saving ? "Enregistrement..." : "Enregistrer"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                </Field>
+                <Field label="Prix d'achat" htmlFor="purchase_price">
+                  <div className="relative">
+                    <Input
+                      id="purchase_price"
+                      type="number"
+                      className="pr-14 tabular"
+                      value={form.purchase_price}
+                      onChange={(e) => update("purchase_price", e.target.value)}
+                    />
+                    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-subtle-foreground">FCFA</span>
+                  </div>
+                </Field>
+              </FormSection>
+
+              <FormSection title="Photo et notes" description="Une photo aide à identifier le véhicule dans la flotte.">
+                <Field label="Photo du véhicule" className="sm:col-span-2">
+                  {photoPreview ? (
+                    <div className="relative h-52 overflow-hidden rounded-lg border bg-surface-sunken">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoPreview} alt="Aperçu" className="size-full object-cover" />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={removePhoto}
+                        className="absolute top-3 right-3 bg-card hover:text-danger"
+                        title="Retirer la photo"
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="flex h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface-sunken text-muted-foreground transition-colors hover:border-primary hover:bg-accent">
+                      <span className="flex size-10 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-xs">
+                        {photo ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+                      </span>
+                      <span className="text-sm font-medium text-foreground">Choisir une photo</span>
+                      <span className="text-xs">JPG, PNG ou WebP</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                    </label>
+                  )}
+                </Field>
+                <Field label="Notes" htmlFor="notes" className="sm:col-span-2">
+                  <Textarea
+                    id="notes"
+                    placeholder="Équipements, particularités, historique…"
+                    value={form.notes}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => update("notes", e.target.value)}
+                  />
+                </Field>
+              </FormSection>
+            </div>
+
+            <div className="-mx-5 mt-6 -mb-5 flex justify-end gap-2 border-t bg-surface-sunken px-5 py-4">
+              <Link href="/vehicles" className={buttonVariants({ variant: "outline" })}>
+                Annuler
+              </Link>
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                {saving ? "Enregistrement…" : "Enregistrer"}
+              </Button>
+            </div>
+          </Panel>
         </form>
       </div>
     </AppShell>

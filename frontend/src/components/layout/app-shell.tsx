@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { MobileSidebar, Sidebar } from "./sidebar";
+import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { api } from "@/lib/api";
 import { canAccess, homePathFor } from "@/lib/roles";
@@ -39,8 +39,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading || (user && !allowed)) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="flex h-dvh items-center justify-center bg-background">
+        <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-label="Chargement" />
       </div>
     );
   }
@@ -49,15 +49,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <CurrentUserContext.Provider value={user}>
-      <div className="flex h-screen bg-background">
-        <Sidebar role={user.role} className="hidden w-72 md:flex" />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-border/60 bg-card/80 px-4 py-3 backdrop-blur-xl md:hidden">
-            <MobileSidebar role={user.role} />
-            <span className="font-semibold">FlottAuto</span>
-          </div>
+      <div className="flex h-dvh overflow-hidden bg-background">
+        <Sidebar user={user} className="hidden w-60 shrink-0 lg:flex" />
+        <div className="flex min-w-0 flex-1 flex-col">
           <Topbar user={user} />
-          <main className="flex-1 overflow-auto p-4 lg:p-8">{children}</main>
+          <main className="scrollbar-thin flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
+          </main>
         </div>
       </div>
     </CurrentUserContext.Provider>
