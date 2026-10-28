@@ -1,17 +1,26 @@
-import os
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
-
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from app.utils.uploads import save_documents
 
 router = APIRouter()
+
+PIN_MANAGERS = (
+    models.Role.SUPER_ADMIN,
+    models.Role.ADMIN,
+    models.Role.OPERATIONS_SUPERVISOR,
+    models.Role.STATION_MANAGER,
+)
+# Rôles qui font signer chauffeurs et convoyeurs (états des lieux, autorisations de départ).
+PIN_VERIFIERS = PIN_MANAGERS + (models.Role.MANAGER,)
+
+logger = logging.getLogger("flottauto.pin")
 
 
 def _company_id(current_user: models.User) -> int:
@@ -38,10 +47,11 @@ def create_driver(
 def list_drivers(
     skip: int = 0,
     limit: int = 100,
+    staff_type: models.StaffType | None = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return crud.list_drivers(db, _company_id(current_user), skip=skip, limit=limit)
+    return crud.list_drivers(db, _company_id(current_user), skip=skip, limit=limit, staff_type=staff_type)
 
 
 @router.get("/{driver_id}", response_model=schemas.DriverRead)
@@ -67,6 +77,41 @@ def update_driver(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     return crud.update_driver(db, driver, payload)
+
+
+@router.put("/{driver_id}/pin", response_model=schemas.DriverRead)
+def set_driver_pin(
+    driver_id: int,
+    payload: schemas.PinSet,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role(*PIN_MANAGERS)),
+):
+    """Définit le PIN de signature (états des lieux, autorisations de départ). Jamais renvoyé."""
+    driver = crud.get_driver(db, driver_id, _company_id(current_user))
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    logger.info("PIN défini : driver=%s par user=%s", driver.id, current_user.id)
+    return crud.set_driver_pin(db, driver, payload.pin)
+
+
+@router.post("/{driver_id}/verify-pin", response_model=schemas.PinCheckResult)
+def verify_driver_pin(
+    driver_id: int,
+    payload: schemas.PinCheck,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role(*PIN_VERIFIERS)),
+):
+    driver = crud.get_driver(db, driver_id, _company_id(current_user))
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    if not driver.pin_hash:
+        raise HTTPException(status_code=409, detail="Aucun PIN défini pour cette personne")
+    if crud.driver_pin_locked(db, driver):
+        raise HTTPException(status_code=423, detail="PIN bloqué après trop d'essais, réessayez dans 15 minutes")
+    valid = crud.check_driver_pin(db, driver, payload.pin)
+    if not valid:
+        logger.warning("PIN refusé : driver=%s par user=%s (essais=%s)", driver.id, current_user.id, driver.pin_failed_attempts)
+    return {"valid": valid}
 
 
 @router.delete("/{driver_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -120,22 +165,20 @@ def upload_driver_documents(
     if not upload_files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
-    company_dir = UPLOAD_DIR / str(company_id) / "drivers" / str(driver_id)
-    company_dir.mkdir(parents=True, exist_ok=True)
     issue_date = _parse_date(issue_date)
     expiry_date = _parse_date(expiry_date)
     docs: list[schemas.DocumentRead] = []
 
+    prefixes = []
     for index, upload in enumerate(upload_files, start=1):
         prefix = Path(name).stem if name else Path(upload.filename or "doc").stem
         if len(upload_files) > 1:
             prefix = f"{prefix}_{index}" if prefix else f"doc_{index}"
-        ext = Path(upload.filename or "document").suffix or ".bin"
-        safe_name = f"{prefix or 'doc'}_{os.urandom(4).hex()}{ext}"
-        file_path = company_dir / safe_name
-        with open(file_path, "wb") as f:
-            f.write(upload.file.read())
-        file_url = f"/uploads/{company_id}/drivers/{driver_id}/{safe_name}"
+        prefixes.append(prefix or "doc")
+    # Tout ou rien : un fichier refusé n'enregistre aucun document du lot.
+    file_urls = save_documents(list(zip(upload_files, prefixes)), company_id, "drivers", driver_id)
+
+    for index, (upload, file_url) in enumerate(zip(upload_files, file_urls), start=1):
         doc_name = name or upload.filename or "Document"
         if len(upload_files) > 1 and name:
             doc_name = f"{name} ({index})"

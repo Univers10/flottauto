@@ -246,7 +246,7 @@ function NewWorkOrderPageInner() {
 
               <FormSection title="Photos" description="Photos du véhicule ou des pièces, téléversées après la création.">
                 <Field label="Ajouter des photos" htmlFor="photo">
-                  <Input id="photo" type="file" accept="image/*" multiple onChange={(e) => addPhotos(e.target.files)} />
+                  <Input id="photo" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => addPhotos(e.target.files)} />
                 </Field>
                 <Field label="Légende" htmlFor="caption" hint="Appliquée à toutes les photos.">
                   <Input

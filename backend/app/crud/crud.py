@@ -1,12 +1,13 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TypeVar, Generic
 
-from sqlalchemy import func
+from sqlalchemy import func, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 
 T = TypeVar("T")
 
@@ -68,8 +69,79 @@ def update_user(db: Session, db_obj: models.User, obj_in: schemas.UserUpdate) ->
     if password:
         db_obj.hashed_password = get_password_hash(password)
     for field, value in update_data.items():
-        if value is not None or field in ("first_name", "last_name"):
+        if value is not None or field in ("first_name", "last_name", "station_id"):
             setattr(db_obj, field, value)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
+# Réglages de calcul
+
+def get_company_settings(db: Session, company_id: int) -> models.CompanySettings:
+    """Réglages de la société, créés avec les valeurs par défaut à la première lecture."""
+    query = db.query(models.CompanySettings).filter(models.CompanySettings.company_id == company_id)
+    obj = query.first()
+    if obj is None:
+        db.add(models.CompanySettings(company_id=company_id))
+        try:
+            db.commit()
+        except IntegrityError:
+            # Créée en parallèle par une autre requête : on relit celle-ci.
+            db.rollback()
+        obj = query.one()
+    return obj
+
+
+def update_company_settings(
+    db: Session, obj: models.CompanySettings, obj_in: schemas.OperationsSettingsUpdate
+) -> models.CompanySettings:
+    for field, value in obj_in.model_dump(exclude_unset=True, exclude_none=True).items():
+        setattr(obj, field, value)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+# Station
+
+def list_stations(db: Session, company_id: int) -> list[models.Station]:
+    return db.query(models.Station).filter(models.Station.company_id == company_id).order_by(models.Station.name).all()
+
+
+def get_station(db: Session, station_id: int, company_id: int) -> models.Station | None:
+    return (
+        db.query(models.Station)
+        .filter(models.Station.id == station_id, models.Station.company_id == company_id)
+        .first()
+    )
+
+
+def get_station_by_code(db: Session, code: str, company_id: int) -> models.Station | None:
+    return (
+        db.query(models.Station)
+        .filter(func.upper(models.Station.code) == code.upper(), models.Station.company_id == company_id)
+        .first()
+    )
+
+
+def create_station(db: Session, obj_in: schemas.StationCreate, company_id: int) -> models.Station:
+    data = obj_in.model_dump()
+    data["code"] = data["code"].strip().upper()
+    db_obj = models.Station(**data, company_id=company_id)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
+def update_station(db: Session, db_obj: models.Station, obj_in: schemas.StationUpdate) -> models.Station:
+    for field, value in obj_in.model_dump(exclude_unset=True).items():
+        if field == "code" and value:
+            value = value.strip().upper()
+        setattr(db_obj, field, value)
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
@@ -144,15 +216,87 @@ def get_driver(db: Session, driver_id: int, company_id: int) -> models.Driver | 
     )
 
 
-def list_drivers(db: Session, company_id: int, skip: int = 0, limit: int = 100):
+def list_drivers(
+    db: Session, company_id: int, skip: int = 0, limit: int = 100, staff_type: models.StaffType | None = None
+):
+    query = db.query(models.Driver).filter(models.Driver.company_id == company_id)
+    if staff_type:
+        query = query.filter(models.Driver.staff_type == staff_type)
     return (
-        db.query(models.Driver)
-        .filter(models.Driver.company_id == company_id)
+        query
         .order_by(models.Driver.last_name)
         .offset(skip)
         .limit(limit)
         .all()
     )
+
+
+PIN_MAX_ATTEMPTS = 5
+PIN_LOCK_MINUTES = 15
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def set_driver_pin(db: Session, driver: models.Driver, pin: str) -> models.Driver:
+    driver.pin_hash = get_password_hash(pin)
+    driver.pin_failed_attempts = 0
+    driver.pin_locked_until = None
+    db.add(driver)
+    db.commit()
+    db.refresh(driver)
+    return driver
+
+
+def driver_pin_locked(db: Session, driver: models.Driver) -> bool:
+    """True si le PIN est bloqué. Un blocage expiré est levé (compteur remis à zéro)."""
+    if driver.pin_locked_until is None:
+        return False
+    if driver.pin_locked_until > _utcnow_naive():
+        return True
+    db.execute(
+        update(models.Driver)
+        .where(models.Driver.id == driver.id, models.Driver.pin_locked_until <= _utcnow_naive())
+        .values(pin_failed_attempts=0, pin_locked_until=None)
+    )
+    db.commit()
+    db.refresh(driver)
+    return False
+
+
+def register_pin_attempt(db: Session, driver_id: int) -> int:
+    """Compte un essai AVANT la vérification, par incrément atomique en base (résiste aux requêtes
+    parallèles). Pose le blocage de 15 min au 5e essai. Renvoie le nombre d'essais en cours."""
+    db.execute(
+        update(models.Driver)
+        .where(models.Driver.id == driver_id)
+        .values(pin_failed_attempts=models.Driver.pin_failed_attempts + 1)
+    )
+    attempts = db.query(models.Driver.pin_failed_attempts).filter(models.Driver.id == driver_id).scalar()
+    if attempts >= PIN_MAX_ATTEMPTS:
+        db.execute(
+            update(models.Driver)
+            .where(models.Driver.id == driver_id, models.Driver.pin_locked_until.is_(None))
+            .values(pin_locked_until=_utcnow_naive() + timedelta(minutes=PIN_LOCK_MINUTES))
+        )
+    db.commit()
+    return attempts
+
+
+def check_driver_pin(db: Session, driver: models.Driver, pin: str) -> bool:
+    """Vérifie le PIN de signature. L'essai est compté avant bcrypt ; un succès remet le compteur à zéro."""
+    attempts = register_pin_attempt(db, driver.id)
+    if attempts > PIN_MAX_ATTEMPTS:
+        return False
+    valid = bool(driver.pin_hash) and verify_password(pin, driver.pin_hash)
+    if valid:
+        db.execute(
+            update(models.Driver).where(models.Driver.id == driver.id).values(pin_failed_attempts=0, pin_locked_until=None)
+        )
+        db.commit()
+    db.refresh(driver)
+    return valid
 
 
 def update_driver(db: Session, db_obj: models.Driver, obj_in: schemas.DriverUpdate) -> models.Driver:

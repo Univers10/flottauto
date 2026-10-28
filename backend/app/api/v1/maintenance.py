@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -7,9 +5,7 @@ from sqlalchemy.orm import Session
 from app import crud, models, schemas
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
-
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from app.utils.uploads import save_image
 
 router = APIRouter()
 
@@ -90,7 +86,7 @@ def delete_work_order(
     work_order_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(
-        require_role(models.Role.SUPER_ADMIN, models.Role.ADMIN, models.Role.MANAGER)
+        require_role(models.Role.SUPER_ADMIN, models.Role.ADMIN, models.Role.MANAGER, models.Role.OPERATIONS_SUPERVISOR)
     ),
 ):
     wo = crud.get_work_order(db, work_order_id, _company_id(current_user))
@@ -113,15 +109,7 @@ def upload_work_order_photo(
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
 
-    order_dir = UPLOAD_DIR / str(company_id) / "work_orders" / str(work_order_id)
-    order_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "photo").suffix or ".jpg"
-    safe_name = f"photo_{os.urandom(4).hex()}{ext}"
-    file_path = order_dir / safe_name
-    with open(file_path, "wb") as f:
-        f.write(file.file.read())
-
-    file_url = f"/uploads/{company_id}/work_orders/{work_order_id}/{safe_name}"
+    file_url = save_image(file, company_id, "work_orders", work_order_id, prefix="photo")
     return crud.create_work_order_photo(db, work_order_id, company_id, file_url, caption)
 
 

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Enum,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
@@ -26,6 +27,9 @@ class Role(str, enum.Enum):
     MECHANIC = "mechanic"
     ACCOUNTANT = "accountant"
     READER = "reader"
+    STATION_MANAGER = "station_manager"  # chef de gare
+    OPERATIONS_SUPERVISOR = "operations_supervisor"  # superviseur des opérations
+    CONVEYOR = "conveyor"  # convoyeur
 
 
 class VehicleStatus(str, enum.Enum):
@@ -87,6 +91,11 @@ class FuelType(str, enum.Enum):
     OTHER = "other"
 
 
+class StaffType(str, enum.Enum):
+    DRIVER = "driver"  # chauffeur
+    CONVEYOR = "conveyor"  # convoyeur
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -121,6 +130,7 @@ class User(Base):
     is_invited: Mapped[bool] = mapped_column(Boolean, default=False)
     invitation_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -129,6 +139,44 @@ class User(Base):
     )
 
     company = relationship("Company", back_populates="users")
+    station = relationship("Station")
+
+
+class CompanySettings(Base):
+    """Valeurs de calcul de l'exploitation (rentabilité des convois, seuils d'alerte), une ligne par société."""
+
+    __tablename__ = "company_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, unique=True)
+    diesel_price_per_liter: Mapped[int] = mapped_column(Integer, default=715)
+    driver_daily_ration: Mapped[int] = mapped_column(Integer, default=10000)
+    conveyor_daily_ration: Mapped[int] = mapped_column(Integer, default=5000)
+    broker_commission_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=5)
+    line_revenue_per_bus_day: Mapped[int] = mapped_column(Integer, default=147342)
+    immobilization_daily_rate: Mapped[int] = mapped_column(Integer, default=100000)
+    document_warning_days: Mapped[int] = mapped_column(Integer, default=30)
+    oil_change_warning_km: Mapped[int] = mapped_column(Integer, default=2000)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Station(Base):
+    """Gare d'exploitation (Abobo, Yopougon, Odienné…), recopiée depuis ITTS Gestion quand le pont est actif."""
+
+    __tablename__ = "stations"
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_stations_company_code"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    itts_station_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Vehicle(Base):
@@ -150,12 +198,24 @@ class Vehicle(Base):
     purchase_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_oil_change_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    oil_change_interval_km: Mapped[int] = mapped_column(Integer, default=10000, server_default="10000")
+    fuel_tank_liters: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fuel_consumption_l_100km: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    itts_bus_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+    @property
+    def oil_change_due_in_km(self) -> int | None:
+        """Km restants avant la prochaine vidange (négatif si dépassée), None sans relevé."""
+        if self.last_oil_change_km is None:
+            return None
+        return self.last_oil_change_km + (self.oil_change_interval_km or 10000) - (self.mileage or 0)
 
     company = relationship("Company", back_populates="vehicles")
     driver = relationship("Driver", back_populates="vehicles")
@@ -178,6 +238,12 @@ class Driver(Base):
     license_categories: Mapped[str | None] = mapped_column(String(255), nullable=True)
     license_expiry: Mapped[Date | None] = mapped_column(Date, nullable=True)
     medical_check_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    medical_visit_expiry: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    staff_type: Mapped[StaffType] = mapped_column(Enum(StaffType), default=StaffType.DRIVER, server_default="DRIVER")
+    itts_staff_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_failed_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
@@ -185,6 +251,10 @@ class Driver(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+    @property
+    def has_pin(self) -> bool:
+        return bool(self.pin_hash)
 
     company = relationship("Company", back_populates="drivers")
     vehicles = relationship("Vehicle", back_populates="driver")

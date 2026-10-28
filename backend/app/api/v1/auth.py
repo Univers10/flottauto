@@ -28,6 +28,8 @@ def register_first_admin(
         raise HTTPException(status_code=400, detail="Email already registered")
 
     company = crud.create_company(db, company_in)
+    # Le premier compte est toujours un administrateur, sans gare (rôle et gare du corps ignorés).
+    payload = payload.model_copy(update={"role": models.Role.ADMIN, "station_id": None})
     user = crud.create_user(db, payload, company_id=company.id)
     access_token = create_access_token({"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
@@ -57,6 +59,11 @@ def read_current_user(current_user: models.User = Depends(get_current_user)):
 USER_ADMIN_ROLES = (models.Role.ADMIN, models.Role.SUPER_ADMIN)
 
 
+def _check_station(db: Session, station_id: int | None, company_id: int) -> None:
+    if station_id is not None and not crud.get_station(db, station_id, company_id):
+        raise HTTPException(status_code=400, detail="Gare inconnue")
+
+
 @router.post("/users", response_model=schemas.UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: schemas.UserCreate,
@@ -69,6 +76,7 @@ def create_user(
         raise HTTPException(status_code=403, detail="Not allowed")
     if crud.get_user_by_email(db, payload.email):
         raise HTTPException(status_code=400, detail="Email already registered")
+    _check_station(db, payload.station_id, current_user.company_id)
     return crud.create_user(db, payload, company_id=current_user.company_id)
 
 
@@ -76,7 +84,7 @@ def create_user(
 def list_users(
     role: models.Role | None = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(*USER_ADMIN_ROLES, models.Role.MANAGER)),
+    current_user: models.User = Depends(require_role(*USER_ADMIN_ROLES, models.Role.MANAGER, models.Role.OPERATIONS_SUPERVISOR)),
 ):
     if current_user.company_id is None:
         return []
@@ -93,8 +101,10 @@ def update_user(
     user = crud.get_user(db, user_id)
     if not user or user.company_id != current_user.company_id:
         raise HTTPException(status_code=404, detail="User not found")
-    if payload.role == models.Role.SUPER_ADMIN and current_user.role != models.Role.SUPER_ADMIN:
+    if models.Role.SUPER_ADMIN in (payload.role, user.role) and current_user.role != models.Role.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Not allowed")
     if user.id == current_user.id and (payload.is_active is False or payload.role not in (None, current_user.role)):
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas désactiver ou rétrograder votre propre compte")
+    if "station_id" in payload.model_fields_set:
+        _check_station(db, payload.station_id, current_user.company_id)
     return crud.update_user(db, user, payload)

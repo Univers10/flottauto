@@ -20,6 +20,50 @@ const statusItems = Object.fromEntries(
   (Object.keys(vehicleStatus) as VehicleStatus[]).map((s) => [s, vehicleStatus[s].label])
 ) as Record<string, string>;
 
+function numOrNull(value: string): number | null {
+  if (value.trim() === "") return null;
+  const n = Number(value.replace(",", "."));
+  return Number.isNaN(n) ? null : n;
+}
+
+function UnitInput({
+  id,
+  value,
+  unit,
+  onChange,
+  step,
+  min,
+  max,
+  required,
+}: {
+  id: string;
+  value: string;
+  unit: string;
+  onChange: (value: string) => void;
+  step?: string;
+  min?: number;
+  max?: number;
+  required?: boolean;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={min}
+        max={max}
+        required={required}
+        className="pr-20 tabular"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-subtle-foreground">{unit}</span>
+    </div>
+  );
+}
+
 export default function NewVehiclePage() {
   const router = useRouter();
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -40,6 +84,11 @@ export default function NewVehiclePage() {
     purchase_price: "",
     notes: "",
     driver_id: "",
+    last_oil_change_km: "",
+    oil_change_interval_km: "10000",
+    fuel_tank_liters: "",
+    fuel_consumption_l_100km: "",
+    itts_bus_id: "",
   });
 
   useEffect(() => {
@@ -89,6 +138,11 @@ export default function NewVehiclePage() {
         purchase_price: form.purchase_price ? Number(form.purchase_price) : undefined,
         notes: form.notes || undefined,
         driver_id: form.driver_id ? Number(form.driver_id) : undefined,
+        last_oil_change_km: numOrNull(form.last_oil_change_km),
+        oil_change_interval_km: Number(form.oil_change_interval_km || 10000),
+        fuel_tank_liters: numOrNull(form.fuel_tank_liters),
+        fuel_consumption_l_100km: numOrNull(form.fuel_consumption_l_100km),
+        itts_bus_id: form.itts_bus_id.trim() || null,
       });
       if (photo) {
         const formData = new FormData();
@@ -224,6 +278,53 @@ export default function NewVehiclePage() {
                 </Field>
               </FormSection>
 
+              <FormSection
+                title="Entretien et carburant"
+                description="Sert au suivi des vidanges et au contrôle de la consommation."
+              >
+                <Field label="Kilométrage à la dernière vidange" htmlFor="last_oil_change_km" hint="Laisser vide si inconnu.">
+                  <UnitInput
+                    id="last_oil_change_km"
+                    unit="km"
+                    min={0}
+                    value={form.last_oil_change_km}
+                    onChange={(v) => update("last_oil_change_km", v)}
+                  />
+                </Field>
+                <Field label="Intervalle de vidange" htmlFor="oil_change_interval_km" required>
+                  <UnitInput
+                    id="oil_change_interval_km"
+                    unit="km"
+                    min={500}
+                    max={100000}
+                    required
+                    value={form.oil_change_interval_km}
+                    onChange={(v) => update("oil_change_interval_km", v)}
+                  />
+                </Field>
+                <Field label="Capacité du réservoir" htmlFor="fuel_tank_liters">
+                  <UnitInput
+                    id="fuel_tank_liters"
+                    unit="L"
+                    min={0}
+                    max={2000}
+                    value={form.fuel_tank_liters}
+                    onChange={(v) => update("fuel_tank_liters", v)}
+                  />
+                </Field>
+                <Field label="Consommation moyenne" htmlFor="fuel_consumption_l_100km">
+                  <UnitInput
+                    id="fuel_consumption_l_100km"
+                    unit="L/100 km"
+                    step="0.1"
+                    min={0}
+                    max={200}
+                    value={form.fuel_consumption_l_100km}
+                    onChange={(v) => update("fuel_consumption_l_100km", v)}
+                  />
+                </Field>
+              </FormSection>
+
               <FormSection title="Affectation et achat" description="Chauffeur attitré et valeur d'acquisition.">
                 <Field label="Chauffeur affecté">
                   <Select items={driverItems} value={form.driver_id} onValueChange={(v) => update("driver_id", v || "")}>
@@ -252,6 +353,14 @@ export default function NewVehiclePage() {
                     <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-subtle-foreground">FCFA</span>
                   </div>
                 </Field>
+                <Field label="Identifiant ITTS (car)" htmlFor="itts_bus_id" hint="Facultatif — identifiant du car dans ITTS.">
+                  <Input
+                    id="itts_bus_id"
+                    className="font-mono"
+                    value={form.itts_bus_id}
+                    onChange={(e) => update("itts_bus_id", e.target.value)}
+                  />
+                </Field>
               </FormSection>
 
               <FormSection title="Photo et notes" description="Une photo aide à identifier le véhicule dans la flotte.">
@@ -278,7 +387,7 @@ export default function NewVehiclePage() {
                       </span>
                       <span className="text-sm font-medium text-foreground">Choisir une photo</span>
                       <span className="text-xs">JPG, PNG ou WebP</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                      <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handlePhotoChange} />
                     </label>
                   )}
                 </Field>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -203,3 +203,18 @@ export const deleteTollExpense = (id: number) => api.delete(`/tolls/${id}`);
 
 // Dashboard
 export const getDashboardStats = () => api.get<DashboardStats>("/dashboard/stats");
+
+// Gares
+export const listStations = () => api.get<Station[]>("/stations");
+export const createStation = (body: { name: string; code: string; itts_station_id?: string | null }) => api.post<Station>("/stations", body);
+export const updateStation = (id: number, body: Partial<Pick<Station, "name" | "code" | "itts_station_id" | "active">>) =>
+  api.put<Station>(`/stations/${id}`, body);
+
+// Réglages de calcul de l'exploitation
+export const getOperationsSettings = () => api.get<OperationsSettings>("/settings/operations");
+export const updateOperationsSettings = (body: Partial<Omit<OperationsSettings, "updated_at">>) =>
+  api.put<OperationsSettings>("/settings/operations", body);
+
+// PIN de signature du personnel
+export const setDriverPin = (id: number, pin: string) => api.put<Driver>(`/drivers/${id}/pin`, { pin });
+export const verifyDriverPin = (id: number, pin: string) => api.post<{ valid: boolean }>(`/drivers/${id}/verify-pin`, { pin });

@@ -1,4 +1,4 @@
-import type { EnergyType, FuelType, TollPaymentMethod, VehicleStatus, VehicleType, WorkOrder } from "@/types";
+import type { EnergyType, FuelType, StaffType, TollPaymentMethod, VehicleStatus, VehicleType, WorkOrder } from "@/types";
 
 /** Ton sémantique d'un statut : pilote la couleur de StatusBadge, jamais utilisé seul sans libellé. */
 export type Tone = "success" | "warning" | "danger" | "info" | "neutral";
@@ -67,9 +67,21 @@ export const documentTypeLabels: Record<string, string> = {
   insurance: "Assurance",
   technical_control: "Contrôle technique",
   vignette: "Vignette",
+  transport_card: "Carte de transporteur",
   transport_authorization: "Autorisation de transport",
   license: "Permis",
   id_card: "Pièce d'identité",
   medical: "Visite médicale",
   other: "Autre",
 };
+
+export const staffTypeLabels: Record<StaffType, string> = {
+  driver: "Chauffeur",
+  conveyor: "Convoyeur",
+};
+
+/** Documents obligatoires d'un car pour l'autorisation de départ. */
+export const requiredVehicleDocuments = ["insurance", "technical_control", "registration_card", "transport_card"] as const;
+
+/** Types de justificatifs acceptés par le serveur (PDF, images, Word, Excel). */
+export const DOCUMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx";

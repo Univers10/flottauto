@@ -294,7 +294,7 @@ export default function WorkOrderDetailPage() {
           >
             <form onSubmit={handlePhotoUpload} className="grid gap-3 sm:grid-cols-[1fr_1.5fr_auto] sm:items-end">
               <Field label="Fichiers" htmlFor="photo">
-                <Input id="photo" name="file" type="file" accept="image/*" multiple />
+                <Input id="photo" name="file" type="file" accept="image/jpeg,image/png,image/webp" multiple />
               </Field>
               <Field label="Légende" htmlFor="caption">
                 <Input

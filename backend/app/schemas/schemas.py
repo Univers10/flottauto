@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType
+from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
 
 
 # Common
@@ -45,6 +45,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
     role: Role = Role.ADMIN
+    station_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -53,6 +54,7 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     is_active: bool | None = None
     password: str | None = Field(None, min_length=8)
+    station_id: int | None = None
 
 
 class UserSummary(BaseModel):
@@ -71,12 +73,70 @@ class UserRead(UserBase):
     role: Role
     is_active: bool
     company_id: int | None
+    station_id: int | None = None
     created_at: datetime
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+# Réglages de calcul de l'exploitation
+class OperationsSettingsUpdate(BaseModel):
+    diesel_price_per_liter: int | None = Field(None, ge=1, le=100000)
+    driver_daily_ration: int | None = Field(None, ge=0, le=1000000)
+    conveyor_daily_ration: int | None = Field(None, ge=0, le=1000000)
+    broker_commission_pct: Decimal | None = Field(None, ge=0, le=100)
+    line_revenue_per_bus_day: int | None = Field(None, ge=0, le=100000000)
+    immobilization_daily_rate: int | None = Field(None, ge=0, le=100000000)
+    document_warning_days: int | None = Field(None, ge=1, le=365)
+    oil_change_warning_km: int | None = Field(None, ge=0, le=100000)
+
+
+class OperationsSettingsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    diesel_price_per_liter: int
+    driver_daily_ration: int
+    conveyor_daily_ration: int
+    broker_commission_pct: Decimal
+    line_revenue_per_bus_day: int
+    immobilization_daily_rate: int
+    document_warning_days: int
+    oil_change_warning_km: int
+    updated_at: datetime
+
+
+# Station
+class StationCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=2, max_length=255)
+    code: str = Field(..., min_length=2, max_length=20)
+    itts_station_id: str | None = Field(None, max_length=64)
+
+
+class StationUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # Annotés sans « | None » : un null explicite est refusé (422), l'absence reste permise.
+    name: str = Field(None, min_length=2, max_length=255)
+    code: str = Field(None, min_length=2, max_length=20)
+    itts_station_id: str | None = Field(None, max_length=64)
+    active: bool = None
+
+
+class StationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_id: int
+    name: str
+    code: str
+    itts_station_id: str | None
+    active: bool
+    created_at: datetime
 
 
 # Vehicle
@@ -94,7 +154,11 @@ class VehicleCreate(BaseModel):
     status: VehicleStatus = VehicleStatus.AVAILABLE
     purchase_price: Decimal | None = None
     notes: str | None = None
-    photo_url: str | None = None
+    last_oil_change_km: int | None = Field(None, ge=0)
+    oil_change_interval_km: int = Field(10000, ge=500, le=100000)
+    fuel_tank_liters: int | None = Field(None, ge=0, le=2000)
+    fuel_consumption_l_100km: Decimal | None = Field(None, ge=0, le=200)
+    itts_bus_id: str | None = Field(None, max_length=64)
 
 
 class VehicleUpdate(VehicleCreate):
@@ -122,6 +186,12 @@ class VehicleRead(BaseModel):
     purchase_price: Decimal | None
     notes: str | None
     photo_url: str | None
+    last_oil_change_km: int | None = None
+    oil_change_interval_km: int = 10000
+    oil_change_due_in_km: int | None = None
+    fuel_tank_liters: int | None = None
+    fuel_consumption_l_100km: Decimal | None = None
+    itts_bus_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -142,6 +212,9 @@ class DriverCreate(BaseModel):
     license_categories: str | None = Field(None, max_length=255)
     license_expiry: date | None = None
     medical_check_date: date | None = None
+    medical_visit_expiry: date | None = None
+    staff_type: StaffType = StaffType.DRIVER
+    itts_staff_id: str | None = Field(None, max_length=64)
 
 
 class DriverUpdate(BaseModel):
@@ -154,6 +227,9 @@ class DriverUpdate(BaseModel):
     license_categories: str | None = Field(None, max_length=255)
     license_expiry: date | None = None
     medical_check_date: date | None = None
+    medical_visit_expiry: date | None = None
+    staff_type: StaffType = None  # null explicite refusé
+    itts_staff_id: str | None = Field(None, max_length=64)
     is_active: bool | None = None
 
 
@@ -171,9 +247,25 @@ class DriverRead(BaseModel):
     license_categories: str | None
     license_expiry: date | None
     medical_check_date: date | None
+    medical_visit_expiry: date | None = None
+    staff_type: StaffType = StaffType.DRIVER
+    itts_staff_id: str | None = None
+    has_pin: bool = False
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class PinSet(BaseModel):
+    pin: str = Field(..., pattern=r"^[0-9]{4,6}$")
+
+
+class PinCheck(BaseModel):
+    pin: str = Field(..., min_length=1, max_length=6)
+
+
+class PinCheckResult(BaseModel):
+    valid: bool
 
 
 # Document

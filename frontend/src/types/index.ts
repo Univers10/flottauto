@@ -5,7 +5,10 @@ export type Role =
   | "driver"
   | "mechanic"
   | "accountant"
-  | "reader";
+  | "reader"
+  | "station_manager"
+  | "operations_supervisor"
+  | "conveyor";
 
 export interface User {
   id: number;
@@ -15,7 +18,31 @@ export interface User {
   role: Role;
   is_active: boolean;
   company_id: number | null;
+  station_id: number | null;
   created_at: string;
+}
+
+export interface Station {
+  id: number;
+  company_id: number;
+  name: string;
+  code: string;
+  itts_station_id: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+/** Valeurs de calcul de l'exploitation (FCFA, %, jours, km). */
+export interface OperationsSettings {
+  diesel_price_per_liter: number;
+  driver_daily_ration: number;
+  conveyor_daily_ration: number;
+  broker_commission_pct: string;
+  line_revenue_per_bus_day: number;
+  immobilization_daily_rate: number;
+  document_warning_days: number;
+  oil_change_warning_km: number;
+  updated_at: string;
 }
 
 export interface Company {
@@ -65,9 +92,18 @@ export interface Vehicle {
   purchase_price: string | null;
   notes: string | null;
   photo_url: string | null;
+  last_oil_change_km: number | null;
+  oil_change_interval_km: number;
+  /** Km restants avant la vidange (négatif si dépassée), null sans relevé. */
+  oil_change_due_in_km: number | null;
+  fuel_tank_liters: number | null;
+  fuel_consumption_l_100km: string | null;
+  itts_bus_id: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type StaffType = "driver" | "conveyor";
 
 export interface Driver {
   id: number;
@@ -81,6 +117,10 @@ export interface Driver {
   license_categories: string | null;
   license_expiry: string | null;
   medical_check_date: string | null;
+  medical_visit_expiry: string | null;
+  staff_type: StaffType;
+  itts_staff_id: string | null;
+  has_pin: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;

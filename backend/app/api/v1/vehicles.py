@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -7,9 +6,7 @@ from sqlalchemy.orm import Session
 from app import crud, models, schemas
 from app.api.deps import get_current_user
 from app.core.database import get_db
-
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from app.utils.uploads import delete_upload, save_documents, save_image
 
 router = APIRouter()
 
@@ -23,16 +20,6 @@ def _company_id(current_user: models.User) -> int:
 def _parse_date(value: str | None) -> str | None:
     value = (value or "").strip()
     return value or None
-
-
-def _save_upload(file: UploadFile, company_dir: Path, prefix: str) -> str:
-    company_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or prefix).suffix or ".bin"
-    safe_name = f"{prefix}_{os.urandom(4).hex()}{ext}"
-    file_path = company_dir / safe_name
-    with open(file_path, "wb") as f:
-        f.write(file.file.read())
-    return safe_name
 
 
 @router.post("", response_model=schemas.VehicleRead, status_code=status.HTTP_201_CREATED)
@@ -110,21 +97,9 @@ def upload_vehicle_photo(
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
-    company_dir = UPLOAD_DIR / str(company_id) / "vehicles" / str(vehicle_id)
-    company_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "photo").suffix or ".jpg"
-    safe_name = f"photo_{os.urandom(4).hex()}{ext}"
-
-    file_path = company_dir / safe_name
-    with open(file_path, "wb") as f:
-        f.write(file.file.read())
-
-    if vehicle.photo_url:
-        old = company_dir / Path(vehicle.photo_url).name
-        if old.exists():
-            old.unlink()
-
-    vehicle.photo_url = f"/uploads/{company_id}/vehicles/{vehicle_id}/{safe_name}"
+    new_url = save_image(file, company_id, "vehicles", vehicle_id, prefix="photo")
+    delete_upload(vehicle.photo_url, company_id)
+    vehicle.photo_url = new_url
     db.add(vehicle)
     db.commit()
     db.refresh(vehicle)
@@ -143,10 +118,7 @@ def delete_vehicle_photo(
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
     if vehicle.photo_url:
-        company_dir = UPLOAD_DIR / str(company_id) / "vehicles" / str(vehicle_id)
-        old = company_dir / Path(vehicle.photo_url).name
-        if old.exists():
-            old.unlink()
+        delete_upload(vehicle.photo_url, company_id)
         vehicle.photo_url = None
         db.add(vehicle)
         db.commit()
@@ -192,17 +164,20 @@ def upload_vehicle_documents(
     if not upload_files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
-    company_dir = UPLOAD_DIR / str(company_id) / "vehicles" / str(vehicle_id)
     issue_date = _parse_date(issue_date)
     expiry_date = _parse_date(expiry_date)
     docs: list[schemas.DocumentRead] = []
 
+    prefixes = []
     for index, upload in enumerate(upload_files, start=1):
         prefix = Path(name).stem if name else Path(upload.filename or "doc").stem
         if len(upload_files) > 1:
             prefix = f"{prefix}_{index}" if prefix else f"doc_{index}"
-        safe_name = _save_upload(upload, company_dir, prefix or "doc")
-        file_url = f"/uploads/{company_id}/vehicles/{vehicle_id}/{safe_name}"
+        prefixes.append(prefix or "doc")
+    # Tout ou rien : un fichier refusé n'enregistre aucun document du lot.
+    file_urls = save_documents(list(zip(upload_files, prefixes)), company_id, "vehicles", vehicle_id)
+
+    for index, (upload, file_url) in enumerate(zip(upload_files, file_urls), start=1):
         doc_name = name or upload.filename or "Document"
         if len(upload_files) > 1 and name:
             doc_name = f"{name} ({index})"

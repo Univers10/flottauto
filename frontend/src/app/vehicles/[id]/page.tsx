@@ -6,8 +6,10 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Calendar,
   Car,
+  Droplets,
   ChevronRight,
   ExternalLink,
+  ShieldCheck,
   FileText,
   Fuel,
   Gauge,
@@ -44,6 +46,7 @@ import {
   Plate,
   StatCard,
   StatusBadge,
+  toneText,
 } from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
 import {
@@ -59,19 +62,22 @@ import {
   deleteFuelExpense,
   uploadVehiclePhoto,
   deleteVehiclePhoto,
+  getOperationsSettings,
 } from "@/lib/api";
 import {
   documentTypeLabels,
   energyLabels,
   fuelLabels,
+  requiredVehicleDocuments,
   tollMethodLabels,
   vehicleStatus,
   vehicleTypeLabels,
   workOrderStatus,
   workOrderType,
   type Tone,
+  DOCUMENT_ACCEPT,
 } from "@/lib/labels";
-import { formatDate, formatMoney, formatNumber, formatRelativeDays, fullName, initials } from "@/lib/format";
+import { expiryTone, formatDate, formatMoney, formatNumber, formatRelativeDays, fullName, initials } from "@/lib/format";
 import { toast } from "sonner";
 import type {
   Document,
@@ -103,14 +109,56 @@ function expiryState(expiry: string | null): { tone: Tone; label: string } | nul
   return { tone: "neutral", label: `Jusqu'au ${formatDate(expiry, "short")}` };
 }
 
-function HeroFact({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
+const DEFAULT_OIL_WARNING_KM = 2000;
+const DEFAULT_DOC_WARNING_DAYS = 30;
+
+/** État de la vidange à partir des km restants calculés par le serveur. */
+function oilChangeState(dueInKm: number | null, warnKm: number): { tone: Tone; label: string } {
+  if (dueInKm === null || dueInKm === undefined) return { tone: "neutral", label: "non renseignée" };
+  if (dueInKm < 0) return { tone: "danger", label: `dépassée de ${formatNumber(-dueInKm, "km")}` };
+  return { tone: dueInKm <= warnKm ? "warning" : "success", label: `dans ${formatNumber(dueInKm, "km")}` };
+}
+
+/** Conformité d'un document obligatoire : on retient le plus récent (expiration la plus lointaine). */
+function requiredDocState(docs: Document[], type: string, warnDays: number): { tone: Tone; status: string } {
+  const ofType = docs.filter((d) => d.document_type === type);
+  if (ofType.length === 0) return { tone: "danger", status: "Manquant" };
+  const latest = [...ofType].sort((a, b) => {
+    const ta = a.expiry_date ? new Date(a.expiry_date).getTime() : -Infinity;
+    const tb = b.expiry_date ? new Date(b.expiry_date).getTime() : -Infinity;
+    return tb - ta;
+  })[0];
+  if (!latest.expiry_date) return { tone: "success", status: "Présent, sans échéance" };
+  const tone = expiryTone(latest.expiry_date, warnDays + 1);
+  if (tone === "danger") return { tone, status: "Expiré" };
+  if (tone === "warning") return { tone, status: `Expire ${formatRelativeDays(latest.expiry_date)}` };
+  return { tone: "success", status: `Valide jusqu'au ${formatDate(latest.expiry_date, "short")}` };
+}
+
+function numOrNull(value: string): number | null {
+  if (value.trim() === "") return null;
+  const n = Number(value.replace(",", "."));
+  return Number.isNaN(n) ? null : n;
+}
+
+function HeroFact({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: React.ReactNode;
+  tone?: Tone | null;
+}) {
   return (
     <div className="min-w-0">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3.5 text-subtle-foreground" />
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-semibold tabular">{value}</p>
+      <p className={cn("mt-1 truncate text-sm font-semibold tabular", tone && toneText(tone))}>{value}</p>
     </div>
   );
 }
@@ -178,6 +226,11 @@ export default function VehicleDetailPage() {
     status: "available" as VehicleStatus,
     purchase_price: "",
     notes: "",
+    last_oil_change_km: "",
+    oil_change_interval_km: "10000",
+    fuel_tank_liters: "",
+    fuel_consumption_l_100km: "",
+    itts_bus_id: "",
   });
   const [docEditOpen, setDocEditOpen] = useState(false);
   const [savingDocEdit, setSavingDocEdit] = useState(false);
@@ -189,6 +242,18 @@ export default function VehicleDetailPage() {
     reminder_days: "30",
   });
   const [uploadFormKey, setUploadFormKey] = useState(0);
+  const [oilWarningKm, setOilWarningKm] = useState(DEFAULT_OIL_WARNING_KM);
+  const [docWarningDays, setDocWarningDays] = useState(DEFAULT_DOC_WARNING_DAYS);
+
+  useEffect(() => {
+    // Les mécaniciens n'ont pas accès aux paramètres (403) : on garde les seuils par défaut.
+    getOperationsSettings()
+      .then((settings) => {
+        setOilWarningKm(settings.oil_change_warning_km ?? DEFAULT_OIL_WARNING_KM);
+        setDocWarningDays(settings.document_warning_days ?? DEFAULT_DOC_WARNING_DAYS);
+      })
+      .catch(() => {});
+  }, []);
 
   function applyVehicleToInfoForm(v: Vehicle) {
     setInfoForm({
@@ -204,6 +269,11 @@ export default function VehicleDetailPage() {
       status: v.status || "available",
       purchase_price: v.purchase_price != null ? String(v.purchase_price) : "",
       notes: v.notes || "",
+      last_oil_change_km: v.last_oil_change_km != null ? String(v.last_oil_change_km) : "",
+      oil_change_interval_km: String(v.oil_change_interval_km ?? 10000),
+      fuel_tank_liters: v.fuel_tank_liters != null ? String(v.fuel_tank_liters) : "",
+      fuel_consumption_l_100km: v.fuel_consumption_l_100km != null ? String(Number(v.fuel_consumption_l_100km)) : "",
+      itts_bus_id: v.itts_bus_id || "",
     });
   }
 
@@ -267,7 +337,12 @@ export default function VehicleDetailPage() {
         status: infoForm.status,
         purchase_price: infoForm.purchase_price ? Number(infoForm.purchase_price) : null,
         notes: infoForm.notes.trim() || null,
-      } as Partial<Vehicle>);
+        last_oil_change_km: numOrNull(infoForm.last_oil_change_km),
+        oil_change_interval_km: Number(infoForm.oil_change_interval_km || 10000),
+        fuel_tank_liters: numOrNull(infoForm.fuel_tank_liters),
+        fuel_consumption_l_100km: numOrNull(infoForm.fuel_consumption_l_100km),
+        itts_bus_id: infoForm.itts_bus_id.trim() || null,
+      } as unknown as Partial<Vehicle>);
       setVehicle(updated);
       applyVehicleToInfoForm(updated);
       setEditingInfo(false);
@@ -552,6 +627,12 @@ export default function VehicleDetailPage() {
   const totalCost = totalMaintenanceCost + totalTollCost + totalFuelCost;
   const typeLabel = vehicleTypeLabels[vehicle.vehicle_type] || vehicle.vehicle_type;
   const energyLabel = energyLabels[vehicle.energy] || vehicle.energy;
+  const oilState = oilChangeState(vehicle.oil_change_due_in_km, oilWarningKm);
+  const requiredDocs = requiredVehicleDocuments.map((type) => ({
+    type,
+    name: documentTypeLabels[type] || type,
+    ...requiredDocState(documents, type, docWarningDays),
+  }));
 
   function startEditing() {
     setTab("info");
@@ -600,7 +681,7 @@ export default function VehicleDetailPage() {
               >
                 {photoUploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
                 {vehicle.photo_url ? "Changer" : "Ajouter une photo"}
-                <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} disabled={photoUploading} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handlePhotoUpload} disabled={photoUploading} />
               </label>
               {vehicle.photo_url && (
                 <Button
@@ -630,11 +711,17 @@ export default function VehicleDetailPage() {
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t pt-5 sm:grid-cols-3 lg:grid-cols-5">
               <HeroFact icon={Gauge} label="Kilométrage" value={formatNumber(vehicle.mileage, "km")} />
               <HeroFact icon={Calendar} label="Année" value={vehicle.year ?? "—"} />
               <HeroFact icon={Zap} label="Énergie" value={energyLabel} />
               <HeroFact icon={User} label="Chauffeur" value={driver ? fullName(driver) : "Non affecté"} />
+              <HeroFact
+                icon={Droplets}
+                label="Vidange"
+                value={oilState.label}
+                tone={oilState.tone === "danger" || oilState.tone === "warning" ? oilState.tone : null}
+              />
             </div>
           </div>
         </div>
@@ -701,6 +788,27 @@ export default function VehicleDetailPage() {
                         { label: "Kilométrage", value: formatNumber(vehicle.mileage, "km") },
                         { label: "Mise en circulation", value: formatDate(vehicle.first_registration_date) },
                         { label: "Prix d'achat", value: vehicle.purchase_price ? formatMoney(vehicle.purchase_price) : "—" },
+                      ]}
+                    />
+                  </div>
+                  <h3 className="mt-6 mb-2.5 text-[13px] font-medium text-muted-foreground">Entretien et carburant</h3>
+                  <div className="grid gap-x-10 gap-y-2.5 md:grid-cols-2">
+                    <DetailList
+                      items={[
+                        { label: "Dernière vidange", value: formatNumber(vehicle.last_oil_change_km, "km") },
+                        { label: "Intervalle de vidange", value: formatNumber(vehicle.oil_change_interval_km, "km") },
+                        { label: "Prochaine vidange", value: <StatusBadge tone={oilState.tone}>{oilState.label}</StatusBadge> },
+                      ]}
+                    />
+                    <DetailList
+                      className="border-t pt-2.5 md:border-t-0 md:pt-0"
+                      items={[
+                        { label: "Capacité du réservoir", value: formatNumber(vehicle.fuel_tank_liters, "L") },
+                        { label: "Consommation moyenne", value: formatNumber(vehicle.fuel_consumption_l_100km, "L/100 km") },
+                        {
+                          label: "Identifiant ITTS",
+                          value: vehicle.itts_bus_id ? <span className="font-mono text-xs">{vehicle.itts_bus_id}</span> : "—",
+                        },
                       ]}
                     />
                   </div>
@@ -847,6 +955,63 @@ export default function VehicleDetailPage() {
                         </Field>
                       </FormSection>
 
+                      <FormSection title="Entretien et carburant" description="Suivi des vidanges et de la consommation.">
+                        <Field label="Kilométrage à la dernière vidange (km)" htmlFor="v-last-oil">
+                          <Input
+                            id="v-last-oil"
+                            type="number"
+                            min={0}
+                            className="tabular"
+                            value={infoForm.last_oil_change_km}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, last_oil_change_km: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Intervalle de vidange (km)" htmlFor="v-oil-interval" required>
+                          <Input
+                            id="v-oil-interval"
+                            type="number"
+                            min={500}
+                            max={100000}
+                            required
+                            className="tabular"
+                            value={infoForm.oil_change_interval_km}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, oil_change_interval_km: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Capacité du réservoir (L)" htmlFor="v-tank">
+                          <Input
+                            id="v-tank"
+                            type="number"
+                            min={0}
+                            max={2000}
+                            className="tabular"
+                            value={infoForm.fuel_tank_liters}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, fuel_tank_liters: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Consommation moyenne (L/100 km)" htmlFor="v-consumption">
+                          <Input
+                            id="v-consumption"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.1"
+                            min={0}
+                            max={200}
+                            className="tabular"
+                            value={infoForm.fuel_consumption_l_100km}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, fuel_consumption_l_100km: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Identifiant ITTS (car)" htmlFor="v-itts" hint="Facultatif.">
+                          <Input
+                            id="v-itts"
+                            className="font-mono"
+                            value={infoForm.itts_bus_id}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, itts_bus_id: e.target.value }))}
+                          />
+                        </Field>
+                      </FormSection>
+
                       <FormSection title="Notes">
                         <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2">
                           <Textarea
@@ -926,7 +1091,7 @@ export default function VehicleDetailPage() {
                           </Field>
                         </div>
                         <Field label="Fichiers" htmlFor="files" required hint="Vous pouvez sélectionner plusieurs documents en même temps.">
-                          <Input id="files" name="files" type="file" multiple required />
+                          <Input id="files" name="files" type="file" accept={DOCUMENT_ACCEPT} multiple required />
                         </Field>
                         <DialogFooter>
                           <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>
@@ -1638,6 +1803,26 @@ export default function VehicleDetailPage() {
 
         {/* ─────────── Colonne latérale ─────────── */}
         <aside className="space-y-6">
+          <Panel title="Conformité pour le départ" actions={<ShieldCheck className="size-4 text-subtle-foreground" />}>
+            <DetailList
+              items={[
+                ...requiredDocs.map((d) => ({
+                  label: d.name,
+                  value: <StatusBadge tone={d.tone}>{d.status}</StatusBadge>,
+                })),
+                {
+                  label: "Vidange",
+                  value: (
+                    <StatusBadge tone={oilState.tone}>
+                      {oilState.label.charAt(0).toUpperCase() + oilState.label.slice(1)}
+                    </StatusBadge>
+                  ),
+                },
+              ]}
+            />
+            <p className="mt-4 text-xs text-muted-foreground">Contrôlé automatiquement avant chaque départ.</p>
+          </Panel>
+
           <Panel title="Synthèse des coûts" actions={<Wallet className="size-4 text-subtle-foreground" />}>
             <p className="text-[1.5rem] leading-none font-semibold tracking-tight tabular">{formatMoney(totalCost)}</p>
             <p className="mt-1.5 text-xs text-muted-foreground">Coût cumulé enregistré pour ce véhicule</p>

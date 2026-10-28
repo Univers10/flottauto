@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Car, ExternalLink, FileText, Mail, Pencil, Phone, RotateCcw, Save, Trash2, Upload } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
+import { Car, ExternalLink, FileText, KeyRound, Mail, Pencil, Phone, RotateCcw, Save, Trash2, Upload } from "lucide-react";
+import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -25,11 +25,13 @@ import {
   uploadDriverDocument,
   updateDriverDocument,
   deleteDriverDocument,
+  setDriverPin,
 } from "@/lib/api";
-import { documentTypeLabels } from "@/lib/labels";
+import { documentTypeLabels, staffTypeLabels, DOCUMENT_ACCEPT } from "@/lib/labels";
+import { canManagePins } from "@/lib/roles";
 import { formatDate, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
 import { toast } from "sonner";
-import type { Document, Driver, Vehicle } from "@/types";
+import type { Document, Driver, StaffType, Vehicle } from "@/types";
 
 /** Types de pièces proposés pour un conducteur (libellés partagés). */
 const driverDocTypes = ["license", "id_card", "medical", "insurance", "other"] as const;
@@ -41,6 +43,146 @@ function ExpiryBadge({ value }: { value: string | null | undefined }) {
   if (tone === "danger") return <StatusBadge tone="danger">Expiré</StatusBadge>;
   if (tone === "warning") return <StatusBadge tone="warning">{formatRelativeDays(value)}</StatusBadge>;
   return <StatusBadge tone="success">Valide</StatusBadge>;
+}
+
+const PIN_PATTERN = /^\d{4,6}$/;
+
+/**
+ * PIN de signature (états des lieux, autorisations de départ).
+ * Rendu sous AppShell : useCurrentUser() y est disponible. Le PIN n'est jamais affiché ni conservé.
+ */
+function SignaturePinPanel({ driver, onUpdated }: { driver: Driver; onUpdated: (d: Driver) => void }) {
+  const user = useCurrentUser();
+  const canManage = user ? canManagePins(user.role) : false;
+  const [open, setOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+
+  function openDialog(next: boolean) {
+    // Les champs sont vidés à chaque ouverture/fermeture.
+    setPin("");
+    setConfirmPin("");
+    setOpen(next);
+  }
+
+  const pinInvalid = pin !== "" && !PIN_PATTERN.test(pin);
+  const mismatch = confirmPin !== "" && confirmPin !== pin;
+  const canSubmit = PIN_PATTERN.test(pin) && pin === confirmPin && !savingPin;
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!PIN_PATTERN.test(pin)) {
+      toast.error("Le PIN doit comporter 4 à 6 chiffres");
+      return;
+    }
+    if (pin !== confirmPin) {
+      toast.error("Les deux PIN ne correspondent pas");
+      return;
+    }
+    setSavingPin(true);
+    try {
+      const updated = await setDriverPin(driver.id, pin);
+      onUpdated(updated);
+      toast.success(driver.has_pin ? "PIN modifié" : "PIN défini");
+      openDialog(false);
+    } catch (err: any) {
+      toast.error(err.message || "Erreur lors de l'enregistrement du PIN");
+    } finally {
+      setSavingPin(false);
+    }
+  }
+
+  return (
+    <Panel title="PIN de signature">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-lg border",
+              driver.has_pin ? "border-success-border bg-success-subtle text-success" : "border-warning-border bg-warning-subtle text-warning"
+            )}
+          >
+            <KeyRound className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <StatusBadge tone={driver.has_pin ? "success" : "warning"}>{driver.has_pin ? "Défini" : "Non défini"}</StatusBadge>
+          </div>
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">Sert à signer les états des lieux et les autorisations de départ.</p>
+        {canManage && (
+          <Button variant="outline" className="w-full" onClick={() => openDialog(true)}>
+            <KeyRound className="size-4" />
+            {driver.has_pin ? "Changer le PIN" : "Définir le PIN"}
+          </Button>
+        )}
+      </div>
+
+      <Dialog open={open} onOpenChange={openDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{driver.has_pin ? "Changer le PIN" : "Définir le PIN"}</DialogTitle>
+            <DialogDescription>
+              PIN de {fullName(driver)} : 4 à 6 chiffres. Il ne sera plus affiché après l&apos;enregistrement.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+            <Field
+              label="Nouveau PIN"
+              htmlFor="driver-pin"
+              required
+              hint={pinInvalid ? <span className={cn("font-medium", toneText("danger"))}>4 à 6 chiffres uniquement.</span> : undefined}
+            >
+              <Input
+                id="driver-pin"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]{4,6}"
+                minLength={4}
+                maxLength={6}
+                autoComplete="new-password"
+                required
+                className="tabular tracking-[0.3em]"
+                aria-invalid={pinInvalid || undefined}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+            </Field>
+            <Field
+              label="Confirmer le PIN"
+              htmlFor="driver-pin-confirm"
+              required
+              hint={mismatch ? <span className={cn("font-medium", toneText("danger"))}>Les deux PIN ne correspondent pas.</span> : undefined}
+            >
+              <Input
+                id="driver-pin-confirm"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]{4,6}"
+                minLength={4}
+                maxLength={6}
+                autoComplete="new-password"
+                required
+                className="tabular tracking-[0.3em]"
+                aria-invalid={mismatch || undefined}
+                value={confirmPin}
+                onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => openDialog(false)}>
+                Annuler
+              </Button>
+              <Button type="submit" disabled={!canSubmit}>
+                <Save className="size-4" />
+                {savingPin ? "Enregistrement…" : "Enregistrer le PIN"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Panel>
+  );
 }
 
 export default function DriverProfilePage() {
@@ -60,6 +202,9 @@ export default function DriverProfilePage() {
   const [licenseCategories, setLicenseCategories] = useState("");
   const [licenseExpiry, setLicenseExpiry] = useState("");
   const [medicalCheckDate, setMedicalCheckDate] = useState("");
+  const [medicalVisitExpiry, setMedicalVisitExpiry] = useState("");
+  const [staffType, setStaffType] = useState<StaffType>("driver");
+  const [ittsStaffId, setIttsStaffId] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [original, setOriginal] = useState({
     firstName: "",
@@ -70,6 +215,9 @@ export default function DriverProfilePage() {
     licenseCategories: "",
     licenseExpiry: "",
     medicalCheckDate: "",
+    medicalVisitExpiry: "",
+    staffType: "driver" as StaffType,
+    ittsStaffId: "",
     isActive: true,
   });
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -97,6 +245,9 @@ export default function DriverProfilePage() {
     const nextLicenseCategories = d.license_categories || "";
     const nextLicenseExpiry = d.license_expiry ? d.license_expiry.slice(0, 10) : "";
     const nextMedicalCheckDate = d.medical_check_date ? d.medical_check_date.slice(0, 10) : "";
+    const nextMedicalVisitExpiry = d.medical_visit_expiry ? d.medical_visit_expiry.slice(0, 10) : "";
+    const nextStaffType: StaffType = d.staff_type ?? "driver";
+    const nextIttsStaffId = d.itts_staff_id || "";
     const nextIsActive = d.is_active;
 
     setFirstName(nextFirstName);
@@ -107,6 +258,9 @@ export default function DriverProfilePage() {
     setLicenseCategories(nextLicenseCategories);
     setLicenseExpiry(nextLicenseExpiry);
     setMedicalCheckDate(nextMedicalCheckDate);
+    setMedicalVisitExpiry(nextMedicalVisitExpiry);
+    setStaffType(nextStaffType);
+    setIttsStaffId(nextIttsStaffId);
     setIsActive(nextIsActive);
     setOriginal({
       firstName: nextFirstName,
@@ -117,6 +271,9 @@ export default function DriverProfilePage() {
       licenseCategories: nextLicenseCategories,
       licenseExpiry: nextLicenseExpiry,
       medicalCheckDate: nextMedicalCheckDate,
+      medicalVisitExpiry: nextMedicalVisitExpiry,
+      staffType: nextStaffType,
+      ittsStaffId: nextIttsStaffId,
       isActive: nextIsActive,
     });
   }
@@ -156,6 +313,9 @@ export default function DriverProfilePage() {
     setLicenseCategories(original.licenseCategories);
     setLicenseExpiry(original.licenseExpiry);
     setMedicalCheckDate(original.medicalCheckDate);
+    setMedicalVisitExpiry(original.medicalVisitExpiry);
+    setStaffType(original.staffType);
+    setIttsStaffId(original.ittsStaffId);
     setIsActive(original.isActive);
     toast.info("Formulaire réinitialisé");
   }
@@ -246,6 +406,7 @@ export default function DriverProfilePage() {
     setSaving(true);
     try {
       const updated = await updateDriver(driver.id, {
+        staff_type: staffType,
         first_name: firstName,
         last_name: lastName,
         email: email || null,
@@ -254,11 +415,13 @@ export default function DriverProfilePage() {
         license_categories: licenseCategories || null,
         license_expiry: licenseExpiry || null,
         medical_check_date: medicalCheckDate || null,
+        medical_visit_expiry: medicalVisitExpiry || null,
+        itts_staff_id: ittsStaffId.trim() || null,
         is_active: isActive,
       } as Partial<Driver>);
       setDriver(updated);
       applyDriverToForm(updated);
-      toast.success("Conducteur mis à jour");
+      toast.success("Fiche mise à jour");
     } catch (err: any) {
       toast.error(err.message || "Erreur de sauvegarde");
     } finally {
@@ -271,7 +434,7 @@ export default function DriverProfilePage() {
     if (!confirm(`Supprimer ${driver.first_name} ${driver.last_name} ?`)) return;
     try {
       await deleteDriver(driver.id);
-      toast.success("Conducteur supprimé");
+      toast.success("Personne supprimée");
       router.push("/drivers");
     } catch (err: any) {
       toast.error(err.message || "Erreur de suppression");
@@ -299,6 +462,9 @@ export default function DriverProfilePage() {
   const name = fullName(driver);
   const formExpiryTone = expiryTone(licenseExpiry);
   const savedExpiryTone = expiryTone(driver.license_expiry);
+  const formMedicalTone = expiryTone(medicalVisitExpiry);
+  const savedMedicalTone = expiryTone(driver.medical_visit_expiry);
+  const isDriverForm = staffType === "driver";
   const docTypeLabel = (type: string) => documentTypeLabels[type] ?? type;
 
   const docTypeSelectItems = (
@@ -315,9 +481,10 @@ export default function DriverProfilePage() {
     <AppShell>
       <PageHeader
         title={name}
-        breadcrumb={[{ label: "Conducteurs", href: "/drivers" }, { label: name }]}
+        breadcrumb={[{ label: "Personnel", href: "/drivers" }, { label: name }]}
         actions={
           <>
+            <StatusBadge tone="neutral">{staffTypeLabels[driver.staff_type] ?? driver.staff_type}</StatusBadge>
             <StatusBadge tone={driver.is_active ? "success" : "neutral"}>{driver.is_active ? "Actif" : "Inactif"}</StatusBadge>
             <Button variant="destructive" onClick={remove}>
               <Trash2 className="size-4" />
@@ -351,20 +518,33 @@ export default function DriverProfilePage() {
             </span>
           </div>
         </div>
-        <dl className="grid shrink-0 grid-cols-3 gap-6 border-t pt-4 text-sm sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
-          <div>
-            <dt className="text-xs text-muted-foreground">Permis</dt>
-            <dd className="mt-1 font-mono text-xs font-medium">{driver.license_number || "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Catégories</dt>
-            <dd className="mt-1 font-medium">{driver.license_categories || "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Expiration</dt>
-            <dd className={cn("mt-1 font-medium tabular", savedExpiryTone && toneText(savedExpiryTone))}>{formatDate(driver.license_expiry)}</dd>
-          </div>
-        </dl>
+        {driver.staff_type === "conveyor" ? (
+          <dl className="grid shrink-0 grid-cols-2 gap-6 border-t pt-4 text-sm sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+            <div>
+              <dt className="text-xs text-muted-foreground">Identifiant ITTS</dt>
+              <dd className="mt-1 font-mono text-xs font-medium">{driver.itts_staff_id || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Visite médicale</dt>
+              <dd className={cn("mt-1 font-medium tabular", savedMedicalTone && toneText(savedMedicalTone))}>{formatDate(driver.medical_visit_expiry)}</dd>
+            </div>
+          </dl>
+        ) : (
+          <dl className="grid shrink-0 grid-cols-3 gap-6 border-t pt-4 text-sm sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+            <div>
+              <dt className="text-xs text-muted-foreground">Permis</dt>
+              <dd className="mt-1 font-mono text-xs font-medium">{driver.license_number || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Catégories</dt>
+              <dd className="mt-1 font-medium">{driver.license_categories || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Expiration</dt>
+              <dd className={cn("mt-1 font-medium tabular", savedExpiryTone && toneText(savedExpiryTone))}>{formatDate(driver.license_expiry)}</dd>
+            </div>
+          </dl>
+        )}
       </section>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -372,6 +552,26 @@ export default function DriverProfilePage() {
           {/* Édition */}
           <Panel title="Informations" description="Modifiez la fiche puis enregistrez." bodyClassName="p-0">
             <div className="divide-y p-5">
+              <FormSection title="Type" description="Chauffeur ou convoyeur.">
+                <div role="radiogroup" aria-label="Type de personnel" className="flex gap-1 rounded-lg border bg-surface-sunken p-1 sm:col-span-2 sm:w-fit">
+                  {(Object.keys(staffTypeLabels) as StaffType[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={staffType === t}
+                      onClick={() => setStaffType(t)}
+                      className={cn(
+                        "h-8 rounded-md px-3 text-[13px] font-medium transition-colors",
+                        staffType === t ? "bg-card text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {staffTypeLabels[t]}
+                    </button>
+                  ))}
+                </div>
+              </FormSection>
+
               <FormSection title="Identité">
                 <Field label="Prénom" htmlFor="firstName">
                   <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -390,41 +590,73 @@ export default function DriverProfilePage() {
                 </Field>
               </FormSection>
 
-              <FormSection title="Permis et aptitude" description="Dates de validité du permis et de la dernière visite médicale.">
-                <Field label="Numéro de permis" htmlFor="license">
-                  <Input id="license" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
-                </Field>
-                <Field label="Catégories" htmlFor="categories">
-                  <Input id="categories" value={licenseCategories} onChange={(e) => setLicenseCategories(e.target.value)} placeholder="B, C, D…" />
+              {(isDriverForm || licenseNumber || licenseExpiry) && (
+                <FormSection
+                  title="Permis de conduire"
+                  description={isDriverForm ? "Numéro, catégories et date de validité du permis." : "Facultatif pour un convoyeur."}
+                >
+                  <Field label="Numéro de permis" htmlFor="license">
+                    <Input id="license" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+                  </Field>
+                  <Field label="Catégories" htmlFor="categories">
+                    <Input id="categories" value={licenseCategories} onChange={(e) => setLicenseCategories(e.target.value)} placeholder="B, C, D…" />
+                  </Field>
+                  <Field
+                    label="Expiration du permis"
+                    htmlFor="licenseExpiry"
+                    hint={
+                      formExpiryTone ? (
+                        <span className={cn("font-medium", toneText(formExpiryTone))}>
+                          {formExpiryTone === "danger" ? "Permis expiré" : "Expire bientôt"} · {formatRelativeDays(licenseExpiry)}
+                        </span>
+                      ) : undefined
+                    }
+                  >
+                    <DateInput
+                      id="licenseExpiry"
+                      value={licenseExpiry}
+                      onValueChange={setLicenseExpiry}
+                      className={cn(formExpiryTone === "danger" && "border-danger-border", formExpiryTone === "warning" && "border-warning-border")}
+                    />
+                  </Field>
+                </FormSection>
+              )}
+
+              <FormSection title="Aptitude médicale" description="Date de la dernière visite et fin de validité de l'aptitude.">
+                <Field label="Date de visite médicale" htmlFor="medical">
+                  <DateInput id="medical" value={medicalCheckDate} onValueChange={setMedicalCheckDate} />
                 </Field>
                 <Field
-                  label="Expiration du permis"
-                  htmlFor="licenseExpiry"
+                  label="Expiration de la visite médicale"
+                  htmlFor="medicalVisitExpiry"
                   hint={
-                    formExpiryTone ? (
-                      <span className={cn("font-medium", toneText(formExpiryTone))}>
-                        {formExpiryTone === "danger" ? "Permis expiré" : "Expire bientôt"} · {formatRelativeDays(licenseExpiry)}
+                    formMedicalTone ? (
+                      <span className={cn("font-medium", toneText(formMedicalTone))}>
+                        {formMedicalTone === "danger" ? "Visite expirée" : "Expire bientôt"} · {formatRelativeDays(medicalVisitExpiry)}
                       </span>
                     ) : undefined
                   }
                 >
                   <DateInput
-                    id="licenseExpiry"
-                    value={licenseExpiry}
-                    onValueChange={setLicenseExpiry}
-                    className={cn(formExpiryTone === "danger" && "border-danger-border", formExpiryTone === "warning" && "border-warning-border")}
+                    id="medicalVisitExpiry"
+                    value={medicalVisitExpiry}
+                    onValueChange={setMedicalVisitExpiry}
+                    className={cn(formMedicalTone === "danger" && "border-danger-border", formMedicalTone === "warning" && "border-warning-border")}
                   />
                 </Field>
-                <Field label="Visite médicale" htmlFor="medical">
-                  <DateInput id="medical" value={medicalCheckDate} onValueChange={setMedicalCheckDate} />
+              </FormSection>
+
+              <FormSection title="Système ITTS" description="Identifiant dans le système ITTS, si la personne y est enregistrée.">
+                <Field label="Identifiant ITTS" htmlFor="ittsStaffId" hint="Optionnel.">
+                  <Input id="ittsStaffId" value={ittsStaffId} onChange={(e) => setIttsStaffId(e.target.value)} />
                 </Field>
               </FormSection>
 
               <FormSection title="Statut">
                 <label htmlFor="isActive" className="flex items-center justify-between gap-4 rounded-lg border bg-surface-sunken px-3.5 py-3 sm:col-span-2">
                   <span>
-                    <span className="block text-[13px] font-medium">Conducteur actif</span>
-                    <span className="block text-xs text-muted-foreground">{isActive ? "Le conducteur est actif." : "Le conducteur est désactivé."}</span>
+                    <span className="block text-[13px] font-medium">Personne active</span>
+                    <span className="block text-xs text-muted-foreground">{isActive ? "La personne est active." : "La personne est désactivée."}</span>
                   </span>
                   <Switch id="isActive" checked={isActive} onCheckedChange={setIsActive} />
                 </label>
@@ -448,7 +680,7 @@ export default function DriverProfilePage() {
             flush
             title={
               <span className="flex items-center gap-2">
-                Pièces du conducteur
+                Pièces jointes
                 <span className="rounded bg-muted px-1.5 text-[11px] font-medium text-muted-foreground tabular">{documents.length}</span>
               </span>
             }
@@ -464,7 +696,7 @@ export default function DriverProfilePage() {
               <EmptyState
                 icon={FileText}
                 title="Aucune pièce jointe"
-                description="Ajoutez le permis, la pièce d'identité ou le certificat médical du conducteur."
+                description="Ajoutez le permis, la pièce d'identité ou le certificat médical."
                 action={
                   <Button variant="outline" onClick={() => setUploadOpen(true)}>
                     <Upload className="size-4" />
@@ -592,14 +824,32 @@ export default function DriverProfilePage() {
                     </span>
                   ),
                 },
-                { label: "Visite médicale", value: formatDate(driver.medical_check_date) },
+                {
+                  label: "Visite médicale",
+                  value: (
+                    <span className="flex items-center justify-end gap-2">
+                      <span className={cn(savedMedicalTone && toneText(savedMedicalTone))}>{formatDate(driver.medical_visit_expiry)}</span>
+                      {driver.medical_visit_expiry && <ExpiryBadge value={driver.medical_visit_expiry} />}
+                    </span>
+                  ),
+                },
+                { label: "Dernière visite", value: formatDate(driver.medical_check_date) },
               ]}
             />
           </Panel>
 
+          <SignaturePinPanel
+            driver={driver}
+            onUpdated={(d) => {
+              // Seul has_pin change : on ne réapplique pas le formulaire pour préserver une saisie en cours.
+              setDriver(d);
+            }}
+          />
+
           <Panel title="Fiche">
             <DetailList
               items={[
+                { label: "Identifiant ITTS", value: driver.itts_staff_id ? <span className="font-mono text-xs">{driver.itts_staff_id}</span> : "—" },
                 { label: "Créé le", value: formatDate(driver.created_at) },
                 { label: "Mis à jour", value: formatDate(driver.updated_at) },
                 { label: "Compte utilisateur", value: driver.user_id ? "Lié" : "Aucun" },
@@ -636,7 +886,7 @@ export default function DriverProfilePage() {
               </Field>
             </div>
             <Field label="Fichiers" htmlFor="driver-doc-files" required hint="Permis, pièce d'identité, certificat médical…">
-              <Input id="driver-doc-files" name="files" type="file" multiple required />
+              <Input id="driver-doc-files" name="files" type="file" accept={DOCUMENT_ACCEPT} multiple required />
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>
