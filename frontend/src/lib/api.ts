@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { Departure, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -228,6 +228,7 @@ export const getInspection = (id: number) => api.get<Inspection>(`/inspections/$
 export const createInspection = (body: {
   vehicle_id: number;
   kind: InspectionKind;
+  departure_id?: number | null;
   station_id?: number | null;
   route_label?: string | null;
   scheduled_departure_at?: string | null;
@@ -271,3 +272,34 @@ export const createNeed = (body: { vehicle_id: number; title: string; details?: 
 export const updateNeed = (id: number, body: Partial<Pick<VehicleNeed, "title" | "details" | "priority" | "estimated_cost" | "status" | "status_note">>) =>
   request<VehicleNeed>(`/needs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const createWorkOrderFromNeed = (id: number) => api.post<WorkOrder>(`/needs/${id}/work-order`, {});
+
+// Départs et autorisation
+export const listDepartures = (params: { day?: string; station_id?: number; status?: string } = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
+  return api.get<Departure[]>(`/departures${qs.toString() ? `?${qs}` : ""}`);
+};
+export const getDeparture = (id: number) => api.get<Departure>(`/departures/${id}`);
+export const createDeparture = (body: {
+  vehicle_id: number;
+  scheduled_at: string;
+  station_id?: number | null;
+  route_label?: string | null;
+  distance_km?: number | null;
+  driver_id?: number | null;
+  conveyor_id?: number | null;
+}) => api.post<Departure>("/departures", body);
+export const updateDeparture = (id: number, body: Partial<Pick<Departure, "scheduled_at" | "station_id" | "route_label" | "distance_km" | "driver_id" | "conveyor_id" | "inspection_id">>) =>
+  request<Departure>(`/departures/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const cancelDeparture = (id: number) => api.post<Departure>(`/departures/${id}/cancel`, {});
+export const markDeparted = (id: number) => api.post<Departure>(`/departures/${id}/depart`, {});
+export const issueExitPass = (id: number) => api.post<Departure>(`/departures/${id}/exit-pass`, {});
+export const getExitPass = (id: number) => api.get<ExitPass>(`/departures/${id}/exit-pass`);
+export const notifySupervisor = (id: number) => api.post<void>(`/departures/${id}/notify`, {});
+export const listReplacements = (id: number) => api.get<ReplacementProposal[]>(`/departures/${id}/replacements`);
+export const replaceDepartureVehicle = (id: number, vehicle_id: number) => api.post<Departure>(`/departures/${id}/replace`, { vehicle_id });
+/** Vérification publique du QR (sans connexion). */
+export async function verifyExitPass(token: string): Promise<ExitPassVerification> {
+  const res = await fetch(`${API_URL}/exit-passes/verify?token=${encodeURIComponent(token)}`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error("Vérification impossible");
+  return res.json();
+}

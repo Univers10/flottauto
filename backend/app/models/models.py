@@ -76,6 +76,8 @@ class AlertType(str, enum.Enum):
     BUDGET_OVERRUN = "budget_overrun"
     IMMOBILIZED = "immobilized"
     LICENSE_EXPIRY = "license_expiry"
+    DEPARTURE_BLOCKED = "departure_blocked"
+    DEPARTURE_WARNING = "departure_warning"
 
 
 class TollPaymentMethod(str, enum.Enum):
@@ -591,3 +593,52 @@ class PinAttempt(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
+
+
+class DepartureStatus(str, enum.Enum):
+    PLANNED = "planned"
+    AUTHORIZED = "authorized"
+    DEPARTED = "departed"
+    CANCELLED = "cancelled"
+
+
+class Departure(Base):
+    """Départ d'un car (ligne ou convoi). Reçu d'ITTS Gestion quand le pont est actif (itts_departure_id)."""
+
+    __tablename__ = "departures"
+    __table_args__ = (
+        UniqueConstraint("company_id", "exit_pass_number", name="uq_departures_company_exit_pass"),
+        UniqueConstraint("company_id", "itts_departure_id", name="uq_departures_company_itts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id"), nullable=True)
+    route_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
+    itts_departure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[DepartureStatus] = mapped_column(_str_enum(DepartureStatus), default=DepartureStatus.PLANNED, nullable=False)
+    exit_pass_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exit_pass_issued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    exit_pass_valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    exit_pass_issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    exit_pass_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # green / orange au moment de l'émission
+    departed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    vehicle = relationship("Vehicle")
+    station = relationship("Station")
+    driver = relationship("Driver", foreign_keys=[driver_id])
+    conveyor = relationship("Driver", foreign_keys=[conveyor_id])
+    inspection = relationship("Inspection")

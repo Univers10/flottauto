@@ -376,3 +376,63 @@ export interface VehicleNeed {
   created_at: string;
   updated_at: string;
 }
+
+// ───────────────────────── Départs et autorisation ─────────────────────────
+export type DepartureStatus = "planned" | "authorized" | "departed" | "cancelled";
+export type ChecklistItemStatus = "ok" | "warning" | "blocked" | "pending";
+export type DepartureLight = "green" | "orange" | "red";
+
+export interface DepartureChecklist {
+  status: DepartureLight;
+  blocking_reason: string | null;
+  groups: { key: "papers" | "crew" | "vehicle" | "operations"; label: string; items: { code: string; label: string; status: ChecklistItemStatus; detail: string | null }[] }[];
+}
+
+export interface Departure {
+  id: number;
+  vehicle_id: number;
+  station_id: number | null;
+  route_label: string | null;
+  scheduled_at: string;
+  distance_km: number | null;
+  driver_id: number | null;
+  conveyor_id: number | null;
+  driver: PersonSummary | null;
+  conveyor: PersonSummary | null;
+  inspection_id: number | null;
+  itts_departure_id: string | null;
+  status: DepartureStatus;
+  exit_pass_number: string | null;
+  exit_pass_issued_at: string | null;
+  exit_pass_valid_until: string | null;
+  departed_at: string | null;
+  created_at: string;
+  /** Absente pour un départ parti ou annulé. */
+  checklist: DepartureChecklist | null;
+}
+
+export interface ExitPass {
+  number: string;
+  valid_until: string;
+  issued_at: string;
+  status: "green" | "orange";
+  token: string;
+  verify_url: string;
+  qr_svg: string;
+}
+
+export interface ExitPassVerification {
+  valid: boolean;
+  reason: string | null;
+  number: string | null;
+  registration: string | null;
+  route_label: string | null;
+  valid_until: string | null;
+}
+
+export interface ReplacementProposal {
+  vehicle: { id: number; registration: string; brand: string; model: string };
+  last_score: number | null;
+  oil_change_due_in_km: number | null;
+  documents_status: "ok" | "warning";
+}

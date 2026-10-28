@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = BACKEND_DIR / "uploads"
     # Fichiers sensibles (photos d'états des lieux) : jamais servis en statique, seulement par route authentifiée.
     PRIVATE_UPLOAD_DIR: Path = BACKEND_DIR / "private_uploads"
+    # Adresse publique de l'interface : le QR du bon de sortie y renvoie pour vérification.
+    PUBLIC_APP_URL: str = "http://localhost:3000"
 
     class Config:
         env_file = ".env"

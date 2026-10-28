@@ -36,6 +36,8 @@ from app.models.models import (
     InspectionSignature,
     VehicleNeed,
     PinAttempt,
+    Departure,
+    DepartureStatus,
 )
 
 __all__ = [
@@ -76,4 +78,6 @@ __all__ = [
     "InspectionSignature",
     "VehicleNeed",
     "PinAttempt",
+    "Departure",
+    "DepartureStatus",
 ]

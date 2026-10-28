@@ -94,3 +94,18 @@ def auth(make_user, company):
 @pytest.fixture
 def vehicle(db, company) -> models.Vehicle:
     return crud.create_vehicle(db, schemas.VehicleCreate(registration="AB-586-CI", brand="Yutong", model="ZK6122"), company_id=company.id)
+
+
+@pytest.fixture
+def crew(client, auth):
+    admin = auth(models.Role.ADMIN)
+    driver = client.post("/api/v1/drivers", headers=admin, json={"first_name": "Seidou", "last_name": "Synayoko"}).json()
+    conveyor = client.post("/api/v1/drivers", headers=admin, json={"first_name": "Awa", "last_name": "Koné", "staff_type": "conveyor"}).json()
+    client.put(f"/api/v1/drivers/{driver['id']}/pin", headers=admin, json={"pin": "1111"})
+    client.put(f"/api/v1/drivers/{conveyor['id']}/pin", headers=admin, json={"pin": "2222"})
+    return {"driver": driver, "conveyor": conveyor}
+
+
+@pytest.fixture
+def cg(auth):
+    return auth(models.Role.STATION_MANAGER)

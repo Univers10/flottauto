@@ -1,4 +1,7 @@
 import type {
+  ChecklistItemStatus,
+  DepartureLight,
+  DepartureStatus,
   EnergyType,
   FuelLevel,
   FuelType,
@@ -182,4 +185,25 @@ export const needOriginLabels: Record<NeedOrigin, string> = {
   odometer: "Compteur",
   document: "Document",
   manual: "Saisie manuelle",
+};
+
+// ───────────────────────── Départs ─────────────────────────
+export const departureLight: Record<DepartureLight, StatusDef & { headline: string }> = {
+  green: { label: "Autorisé", tone: "success", headline: "Départ autorisé" },
+  orange: { label: "Avec réserves", tone: "warning", headline: "Départ avec alerte" },
+  red: { label: "Bloqué", tone: "danger", headline: "Départ bloqué" },
+};
+
+export const departureStatus: Record<DepartureStatus, StatusDef> = {
+  planned: { label: "Prévu", tone: "neutral" },
+  authorized: { label: "Bon de sortie émis", tone: "success" },
+  departed: { label: "Parti", tone: "info" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+};
+
+export const checklistItemTone: Record<ChecklistItemStatus, Tone> = {
+  ok: "success",
+  warning: "warning",
+  blocked: "danger",
+  pending: "neutral",
 };

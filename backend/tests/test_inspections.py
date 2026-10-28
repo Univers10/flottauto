@@ -11,21 +11,6 @@ API = "/api/v1/inspections"
 
 # ───────────────────────── Fixtures ─────────────────────────
 
-@pytest.fixture
-def crew(client, auth):
-    admin = auth(R.ADMIN)
-    driver = client.post("/api/v1/drivers", headers=admin, json={"first_name": "Seidou", "last_name": "Synayoko"}).json()
-    conveyor = client.post("/api/v1/drivers", headers=admin, json={"first_name": "Awa", "last_name": "Koné", "staff_type": "conveyor"}).json()
-    client.put(f"/api/v1/drivers/{driver['id']}/pin", headers=admin, json={"pin": "1111"})
-    client.put(f"/api/v1/drivers/{conveyor['id']}/pin", headers=admin, json={"pin": "2222"})
-    return {"driver": driver, "conveyor": conveyor}
-
-
-@pytest.fixture
-def cg(auth):
-    return auth(R.STATION_MANAGER)
-
-
 def _create(client, headers, vehicle, crew, kind="departure", **extra):
     body = {"vehicle_id": vehicle.id, "kind": kind, "driver_id": crew["driver"]["id"], "conveyor_id": crew["conveyor"]["id"], **extra}
     r = client.post(API, headers=headers, json=body)

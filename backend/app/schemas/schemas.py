@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
-from app.models.models import FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
+from app.models.models import DepartureStatus, FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
 
 
 # Common
@@ -510,6 +510,8 @@ class DashboardStats(BaseModel):
 class InspectionCreate(BaseModel):
     vehicle_id: int
     kind: InspectionKind
+    # État des lieux fait pour un départ : car, équipage et ligne repris du départ.
+    departure_id: int | None = None
     station_id: int | None = None
     route_label: str | None = Field(None, max_length=255)
     scheduled_departure_at: datetime | None = None
@@ -676,3 +678,97 @@ class VehicleNeedRead(BaseModel):
 class VehicleNeedList(BaseModel):
     items: list[VehicleNeedRead]
     total_estimated: int
+
+
+# ───────────────────────── Départs et autorisation ─────────────────────────
+class DepartureCreate(BaseModel):
+    vehicle_id: int
+    scheduled_at: datetime
+    station_id: int | None = None
+    route_label: str | None = Field(None, max_length=255)
+    distance_km: int | None = Field(None, ge=1, le=5000)
+    driver_id: int | None = None
+    conveyor_id: int | None = None
+
+
+class DepartureUpdate(BaseModel):
+    scheduled_at: datetime = None
+    station_id: int | None = None
+    route_label: str | None = Field(None, max_length=255)
+    distance_km: int | None = Field(None, ge=1, le=5000)
+    driver_id: int | None = None
+    conveyor_id: int | None = None
+    inspection_id: int | None = None
+
+
+class DepartureReplace(BaseModel):
+    vehicle_id: int
+
+
+class ChecklistItem(BaseModel):
+    code: str
+    label: str
+    status: str  # ok / warning / blocked / pending
+    detail: str | None = None
+
+
+class ChecklistGroup(BaseModel):
+    key: str
+    label: str
+    items: list[ChecklistItem]
+
+
+class DepartureChecklist(BaseModel):
+    status: str  # green / orange / red
+    blocking_reason: str | None
+    groups: list[ChecklistGroup]
+
+
+class DepartureRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    vehicle_id: int
+    station_id: int | None
+    route_label: str | None
+    scheduled_at: datetime
+    distance_km: int | None
+    driver_id: int | None
+    conveyor_id: int | None
+    driver: PersonSummary | None = None
+    conveyor: PersonSummary | None = None
+    inspection_id: int | None
+    itts_departure_id: str | None
+    status: DepartureStatus
+    exit_pass_number: str | None
+    exit_pass_issued_at: datetime | None
+    exit_pass_valid_until: datetime | None
+    departed_at: datetime | None
+    created_at: datetime
+    checklist: DepartureChecklist | None = None
+
+
+class ExitPassRead(BaseModel):
+    number: str
+    valid_until: datetime
+    issued_at: datetime
+    status: str
+    token: str
+    verify_url: str
+    qr_svg: str
+
+
+class ExitPassVerification(BaseModel):
+    valid: bool
+    reason: str | None = None
+    number: str | None = None
+    registration: str | None = None
+    route_label: str | None = None
+    valid_until: datetime | None = None
+
+
+class ReplacementProposal(BaseModel):
+    vehicle: dict
+    last_score: int | None
+    oil_change_due_in_km: int | None
+    documents_status: str

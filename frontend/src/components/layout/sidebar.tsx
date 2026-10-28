@@ -12,6 +12,7 @@ import {
   ListTodo,
   Menu,
   Settings,
+  TicketCheck,
   Users,
   Wrench,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/vehicles", label: "Véhicules", icon: Car },
       { href: "/drivers", label: "Personnel", icon: Users },
+      { href: "/departures", label: "Départs du jour", icon: TicketCheck },
       { href: "/inspections", label: "États des lieux", icon: ClipboardCheck },
       { href: "/maintenance", label: "Maintenance", icon: Wrench },
       { href: "/needs", label: "Besoins", icon: ListTodo },

@@ -205,17 +205,38 @@ def _last_validated_departure(db: Session, vehicle_id: int, company_id: int) -> 
 
 
 def create_inspection(db: Session, company_id: int, user: models.User, payload: schemas.InspectionCreate) -> models.Inspection:
-    vehicle = crud.get_vehicle(db, payload.vehicle_id, company_id)
-    if not vehicle:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
     data = payload.model_dump()
     departure = None
+    if data.pop("departure_id", None) is not None:
+        departure = (
+            db.query(models.Departure)
+            .filter(models.Departure.id == payload.departure_id, models.Departure.company_id == company_id)
+            .first()
+        )
+        scope = _station_scope(user)
+        if departure is None or (scope is not None and departure.station_id != scope):
+            raise HTTPException(status_code=404, detail="Departure not found")
+        if payload.kind != Kind.DEPARTURE:
+            raise HTTPException(status_code=400, detail="Un départ se contrôle par un état des lieux de départ")
+        if departure.status in (models.DepartureStatus.DEPARTED, models.DepartureStatus.CANCELLED):
+            raise HTTPException(status_code=409, detail="Départ clôturé")
+        # Car, équipage, ligne et horaire repris du départ.
+        data["vehicle_id"] = departure.vehicle_id
+        data["station_id"] = data["station_id"] or departure.station_id
+        data["route_label"] = data["route_label"] or departure.route_label
+        data["scheduled_departure_at"] = data["scheduled_departure_at"] or departure.scheduled_at
+        data["driver_id"] = data["driver_id"] or departure.driver_id
+        data["conveyor_id"] = data["conveyor_id"] or departure.conveyor_id
+    vehicle = crud.get_vehicle(db, data["vehicle_id"], company_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    previous = None
     if payload.kind == Kind.ARRIVAL:
-        departure = _last_validated_departure(db, vehicle.id, company_id)
-        if departure is not None:
-            data["driver_id"] = data["driver_id"] or departure.driver_id
-            data["conveyor_id"] = data["conveyor_id"] or departure.conveyor_id
-            data["route_label"] = data["route_label"] or departure.route_label
+        previous = _last_validated_departure(db, vehicle.id, company_id)
+        if previous is not None:
+            data["driver_id"] = data["driver_id"] or previous.driver_id
+            data["conveyor_id"] = data["conveyor_id"] or previous.conveyor_id
+            data["route_label"] = data["route_label"] or previous.route_label
     # Heure d'arrivée fixée par le serveur : le délai d'envoi du bilan (1 h) ne peut pas être contourné.
     data["arrived_at"] = _now() if payload.kind == Kind.ARRIVAL else None
     scope = _station_scope(user)
@@ -230,7 +251,7 @@ def create_inspection(db: Session, company_id: int, user: models.User, payload: 
         **data,
         company_id=company_id,
         number=_number(db, vehicle, payload.kind),
-        departure_inspection_id=departure.id if departure else None,
+        departure_inspection_id=previous.id if previous else None,
         created_by_id=user.id,
     )
     insp.items = [
@@ -238,6 +259,14 @@ def create_inspection(db: Session, company_id: int, user: models.User, payload: 
         for i, it in enumerate(checklists.checklist_for(payload.kind.value))
     ]
     db.add(insp)
+    db.flush()
+    if departure is not None:
+        if departure.status == models.DepartureStatus.AUTHORIZED:
+            # Nouvel état des lieux : le bon de sortie précédent n'est plus valable.
+            from app.services.departures import _revoke_pass
+
+            _revoke_pass(departure)
+        departure.inspection_id = insp.id
     db.commit()
     db.refresh(insp)
     return insp
