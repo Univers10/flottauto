@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Calendar,
   Car,
+  ClipboardCheck,
+  ClipboardList,
   Droplets,
   ChevronRight,
   ExternalLink,
@@ -26,7 +28,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   DetailList,
   EmptyState,
@@ -44,6 +46,7 @@ import {
   PageHeader,
   Panel,
   Plate,
+  SegmentButton,
   StatCard,
   StatusBadge,
   toneText,
@@ -63,11 +66,20 @@ import {
   uploadVehiclePhoto,
   deleteVehiclePhoto,
   getOperationsSettings,
+  listNeeds,
+  createNeed,
+  listInspections,
 } from "@/lib/api";
+import { canRunInspections } from "@/lib/roles";
 import {
   documentTypeLabels,
   energyLabels,
   fuelLabels,
+  inspectionKindLabels,
+  inspectionVerdict,
+  needOriginLabels,
+  needPriority,
+  needStatus,
   requiredVehicleDocuments,
   tollMethodLabels,
   vehicleStatus,
@@ -91,6 +103,9 @@ import type {
   TollPaymentMethod,
   FuelExpense,
   FuelType,
+  InspectionListItem,
+  NeedPriority,
+  VehicleNeed,
 } from "@/types";
 
 const statusItems = Object.fromEntries(
@@ -244,6 +259,9 @@ export default function VehicleDetailPage() {
   const [uploadFormKey, setUploadFormKey] = useState(0);
   const [oilWarningKm, setOilWarningKm] = useState(DEFAULT_OIL_WARNING_KM);
   const [docWarningDays, setDocWarningDays] = useState(DEFAULT_DOC_WARNING_DAYS);
+  const [needs, setNeeds] = useState<VehicleNeed[]>([]);
+  const [needsTotal, setNeedsTotal] = useState(0);
+  const [inspections, setInspections] = useState<InspectionListItem[]>([]);
 
   useEffect(() => {
     // Les mécaniciens n'ont pas accès aux paramètres (403) : on garde les seuils par défaut.
@@ -314,6 +332,31 @@ export default function VehicleDetailPage() {
 
   useEffect(() => {
     load();
+  }, [vehicleId]);
+
+  /** Besoins ouverts et états des lieux : chargés à part, un refus (rôle) ne bloque pas la fiche. */
+  async function loadNeeds() {
+    try {
+      const res = await listNeeds({ vehicle_id: vehicleId, open_only: true });
+      setNeeds(res.items);
+      setNeedsTotal(res.total_estimated);
+    } catch {
+      setNeeds([]);
+      setNeedsTotal(0);
+    }
+  }
+
+  async function loadInspections() {
+    try {
+      setInspections(await listInspections({ vehicle_id: vehicleId }));
+    } catch {
+      setInspections([]);
+    }
+  }
+
+  useEffect(() => {
+    loadNeeds();
+    loadInspections();
   }, [vehicleId]);
 
   async function saveVehicleInfo() {
@@ -744,6 +787,12 @@ export default function VehicleDetailPage() {
                 </TabsTrigger>
                 <TabsTrigger value="maintenance" className="px-2.5">
                   Maintenance <CountChip value={workOrders.length} />
+                </TabsTrigger>
+                <TabsTrigger value="needs" className="px-2.5">
+                  Besoins <CountChip value={needs.length} />
+                </TabsTrigger>
+                <TabsTrigger value="inspections" className="px-2.5">
+                  États des lieux <CountChip value={inspections.length} />
                 </TabsTrigger>
                 <TabsTrigger value="tolls" className="px-2.5">
                   Péages <CountChip value={tolls.length} />
@@ -1424,6 +1473,16 @@ export default function VehicleDetailPage() {
               </Panel>
             </TabsContent>
 
+            {/* ── Besoins ── */}
+            <TabsContent value="needs">
+              <VehicleNeedsPanel vehicleId={vehicle.id} needs={needs} total={needsTotal} onCreated={loadNeeds} />
+            </TabsContent>
+
+            {/* ── États des lieux ── */}
+            <TabsContent value="inspections">
+              <VehicleInspectionsPanel vehicleId={vehicle.id} inspections={inspections} />
+            </TabsContent>
+
             {/* ── Péages ── */}
             <TabsContent value="tolls">
               <Panel
@@ -1876,5 +1935,270 @@ export default function VehicleDetailPage() {
         </aside>
       </div>
     </AppShell>
+  );
+}
+
+/* ───────────────────────── Besoins du car ───────────────────────── */
+
+function VehicleNeedsPanel({
+  vehicleId,
+  needs,
+  total,
+  onCreated,
+}: {
+  vehicleId: number;
+  needs: VehicleNeed[];
+  total: number;
+  onCreated: () => void;
+}) {
+  const user = useCurrentUser();
+  const canWrite = user ? canRunInspections(user.role) : false;
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Panel
+      flush
+      title="Besoins ouverts"
+      description={needs.length ? `${formatMoney(total)} à prévoir` : "Ce qu'il faut prévoir sur ce car avant une dépense."}
+      actions={
+        <>
+          <Link href={`/needs?vehicle_id=${vehicleId}`} className={buttonVariants({ size: "sm", variant: "outline" })}>
+            Tout voir
+          </Link>
+          {canWrite && (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger
+                render={
+                  <Button size="sm">
+                    <Plus className="size-3.5" />
+                    Ajouter un besoin
+                  </Button>
+                }
+              />
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Ajouter un besoin</DialogTitle>
+                </DialogHeader>
+                <VehicleNeedForm
+                  vehicleId={vehicleId}
+                  onClose={() => setOpen(false)}
+                  onCreated={() => {
+                    toast.success("Besoin ajouté");
+                    onCreated();
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
+        </>
+      }
+    >
+      {needs.length === 0 ? (
+        <EmptyState icon={ClipboardList} title="Aucun besoin ouvert" description="Les besoins relevés lors des états des lieux apparaîtront ici." />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Besoin</TableHead>
+              <TableHead className="hidden sm:table-cell">Priorité</TableHead>
+              <TableHead className="hidden md:table-cell">Origine</TableHead>
+              <TableHead className="text-right">Coût estimé</TableHead>
+              <TableHead>Statut</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {needs.map((n) => {
+              const prio = needPriority[n.priority];
+              const st = needStatus[n.status];
+              return (
+                <TableRow key={n.id}>
+                  <TableCell className="max-w-0 w-full">
+                    <p className="truncate font-medium">{n.title}</p>
+                    {n.details && <p className="truncate text-xs text-muted-foreground">{n.details}</p>}
+                    <StatusBadge tone={prio.tone} className="mt-1 sm:hidden">
+                      {prio.label}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <StatusBadge tone={prio.tone}>{prio.label}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{n.origin_label || needOriginLabels[n.origin]}</TableCell>
+                  <TableCell className="text-right font-medium tabular">{n.estimated_cost != null ? formatMoney(n.estimated_cost) : "—"}</TableCell>
+                  <TableCell>
+                    {n.work_order_id ? (
+                      <Link href={`/maintenance/${n.work_order_id}`} title="Voir l'intervention">
+                        <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                      </Link>
+                    ) : (
+                      <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={5}>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="font-medium">Total à prévoir</span>
+                  <span className="font-semibold tabular">{formatMoney(total)}</span>
+                </div>
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      )}
+    </Panel>
+  );
+}
+
+function VehicleNeedForm({ vehicleId, onCreated, onClose }: { vehicleId: number; onCreated: () => void; onClose: () => void }) {
+  const [form, setForm] = useState({ title: "", priority: "this_week" as NeedPriority, estimated_cost: "", details: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (form.title.trim().length < 2) {
+      toast.error("L'intitulé doit faire au moins 2 caractères");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createNeed({
+        vehicle_id: vehicleId,
+        title: form.title.trim(),
+        details: form.details.trim() || null,
+        priority: form.priority,
+        estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : null,
+      });
+      onCreated();
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || "Enregistrement impossible");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Intitulé" htmlFor="need_title" required>
+        <Input
+          id="need_title"
+          required
+          minLength={2}
+          placeholder="Ex. : Remplacer les plaquettes avant"
+          value={form.title}
+          onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+        />
+      </Field>
+      <Field label="Priorité">
+        <div className="flex flex-wrap gap-1">
+          {(Object.keys(needPriority) as NeedPriority[]).map((p) => (
+            <SegmentButton key={p} active={form.priority === p} onClick={() => setForm((f) => ({ ...f, priority: p }))}>
+              {needPriority[p].label}
+            </SegmentButton>
+          ))}
+        </div>
+      </Field>
+      <Field label="Coût estimé (FCFA)" htmlFor="need_cost" hint="Facultatif">
+        <Input
+          id="need_cost"
+          type="number"
+          min={0}
+          className="tabular"
+          value={form.estimated_cost}
+          onChange={(e) => setForm((f) => ({ ...f, estimated_cost: e.target.value }))}
+        />
+      </Field>
+      <Field label="Détails" htmlFor="need_details">
+        <Textarea id="need_details" rows={3} value={form.details} onChange={(e) => setForm((f) => ({ ...f, details: e.target.value }))} />
+      </Field>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Annuler
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving && <Loader2 className="size-4 animate-spin" />}
+          Enregistrer
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/* ───────────────────────── États des lieux du car ───────────────────────── */
+
+function VehicleInspectionsPanel({ vehicleId, inspections }: { vehicleId: number; inspections: InspectionListItem[] }) {
+  const router = useRouter();
+  const user = useCurrentUser();
+  const canWrite = user ? canRunInspections(user.role) : false;
+
+  return (
+    <Panel
+      flush
+      title="États des lieux"
+      description="Contrôles de départ et d'arrivée de ce car."
+      actions={
+        canWrite ? (
+          <Link href={`/inspections/new?vehicle_id=${vehicleId}&kind=departure`} className={buttonVariants({ size: "sm" })}>
+            <Plus className="size-3.5" />
+            Nouvel état des lieux
+          </Link>
+        ) : undefined
+      }
+    >
+      {inspections.length === 0 ? (
+        <EmptyState icon={ClipboardCheck} title="Aucun état des lieux" description="Les états des lieux de départ et d'arrivée apparaîtront ici." />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead className="hidden sm:table-cell">Numéro</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Verdict</TableHead>
+              <TableHead className="hidden md:table-cell">Statut</TableHead>
+              <TableHead className="w-8" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {inspections.map((i) => {
+              const verdict = i.verdict ? inspectionVerdict[i.verdict] : null;
+              return (
+                <TableRow key={i.id} className="group cursor-pointer" onClick={() => router.push(`/inspections/${i.id}`)}>
+                  <TableCell className="tabular">
+                    <Link href={`/inspections/${i.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                      {formatDate(i.scheduled_departure_at || i.created_at)}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">{i.number}</TableCell>
+                  <TableCell>
+                    <StatusBadge tone={i.kind === "departure" ? "info" : "neutral"}>{inspectionKindLabels[i.kind]}</StatusBadge>
+                  </TableCell>
+                  <TableCell>
+                    {verdict ? (
+                      <span className="inline-flex items-center gap-2">
+                        <StatusBadge tone={verdict.tone}>{verdict.label}</StatusBadge>
+                        {i.score != null && <span className="text-xs text-muted-foreground tabular">{i.score}/100</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <StatusBadge tone={i.status === "validated" ? "success" : "warning"}>{i.status === "validated" ? "Validé" : "Brouillon"}</StatusBadge>
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <ChevronRight className="size-4 text-subtle-foreground transition-transform group-hover:translate-x-0.5" />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </Panel>
   );
 }

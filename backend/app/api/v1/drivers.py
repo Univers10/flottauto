@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
@@ -98,6 +98,7 @@ def set_driver_pin(
 def verify_driver_pin(
     driver_id: int,
     payload: schemas.PinCheck,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role(*PIN_VERIFIERS)),
 ):
@@ -106,9 +107,12 @@ def verify_driver_pin(
         raise HTTPException(status_code=404, detail="Driver not found")
     if not driver.pin_hash:
         raise HTTPException(status_code=409, detail="Aucun PIN défini pour cette personne")
+    if crud.collector_throttled(db, current_user.id):
+        raise HTTPException(status_code=429, detail="Trop d'essais de PIN, réessayez plus tard")
     if crud.driver_pin_locked(db, driver):
         raise HTTPException(status_code=423, detail="PIN bloqué après trop d'essais, réessayez dans 15 minutes")
     valid = crud.check_driver_pin(db, driver, payload.pin)
+    crud.record_pin_attempt(db, driver.company_id, current_user.id, driver.id, valid, request.client.host if request.client else None)
     if not valid:
         logger.warning("PIN refusé : driver=%s par user=%s (essais=%s)", driver.id, current_user.id, driver.pin_failed_attempts)
     return {"valid": valid}

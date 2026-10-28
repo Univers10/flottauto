@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -218,3 +218,56 @@ export const updateOperationsSettings = (body: Partial<Omit<OperationsSettings, 
 // PIN de signature du personnel
 export const setDriverPin = (id: number, pin: string) => api.put<Driver>(`/drivers/${id}/pin`, { pin });
 export const verifyDriverPin = (id: number, pin: string) => api.post<{ valid: boolean }>(`/drivers/${id}/verify-pin`, { pin });
+
+// États des lieux
+export const listInspections = (params: { vehicle_id?: number; station_id?: number; kind?: string; status?: string; day?: string } = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
+  return api.get<InspectionListItem[]>(`/inspections${qs.toString() ? `?${qs}` : ""}`);
+};
+export const getInspection = (id: number) => api.get<Inspection>(`/inspections/${id}`);
+export const createInspection = (body: {
+  vehicle_id: number;
+  kind: InspectionKind;
+  station_id?: number | null;
+  route_label?: string | null;
+  scheduled_departure_at?: string | null;
+  driver_id?: number | null;
+  conveyor_id?: number | null;
+}) => api.post<Inspection>("/inspections", body);
+export const updateInspection = (id: number, body: Partial<Pick<Inspection, "station_id" | "route_label" | "scheduled_departure_at" | "driver_id" | "conveyor_id" | "mileage" | "fuel_level" | "fuel_liters" | "observations" | "arrived_at">>) =>
+  request<Inspection>(`/inspections/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const setInspectionItems = (id: number, items: { code: string; status: ItemStatus | null; note?: string | null }[]) =>
+  api.put<Inspection>(`/inspections/${id}/items`, items);
+export function uploadInspectionPhoto(id: number, slot: PhotoSlot, file: File, meta: { capturedAt: Date; fresh: boolean; damage?: boolean }) {
+  const form = new FormData();
+  form.append("slot", slot);
+  form.append("file", file);
+  form.append("captured_at", meta.capturedAt.toISOString());
+  form.append("is_fresh", String(meta.fresh));
+  form.append("damage", String(Boolean(meta.damage)));
+  return uploadFile<InspectionPhoto>(`/inspections/${id}/photos`, form);
+}
+export const signInspection = (id: number, role: SignatureRole, pin?: string) =>
+  api.post<Inspection>(`/inspections/${id}/signatures`, { role, ...(pin ? { pin } : {}) });
+export const validateInspection = (id: number) => api.post<Inspection>(`/inspections/${id}/validate`, {});
+export const getDayReport = (id: number) => api.get<DayReport>(`/inspections/${id}/day-report`);
+/** Photo privée : téléchargée avec le jeton (pas d'URL publique). Renvoie une URL blob à libérer. */
+export async function fetchInspectionPhoto(inspectionId: number, photoId: number): Promise<string> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/inspections/${inspectionId}/photos/${photoId}/file`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Photo indisponible");
+  return URL.createObjectURL(await res.blob());
+}
+
+// Besoins des cars
+export const listNeeds = (params: { vehicle_id?: number; status?: string; priority?: string; open_only?: boolean } = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "" && v !== false).map(([k, v]) => [k, String(v)]));
+  return api.get<{ items: VehicleNeed[]; total_estimated: number }>(`/needs${qs.toString() ? `?${qs}` : ""}`);
+};
+export const createNeed = (body: { vehicle_id: number; title: string; details?: string | null; priority: NeedPriority; estimated_cost?: number | null }) =>
+  api.post<VehicleNeed>("/needs", body);
+export const updateNeed = (id: number, body: Partial<Pick<VehicleNeed, "title" | "details" | "priority" | "estimated_cost" | "status" | "status_note">>) =>
+  request<VehicleNeed>(`/needs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const createWorkOrderFromNeed = (id: number) => api.post<WorkOrder>(`/needs/${id}/work-order`, {});

@@ -120,12 +120,12 @@ export function Panel({
   return (
     <section className={cn("overflow-hidden rounded-xl border bg-card shadow-card", className)}>
       {(title || actions) && (
-        <header className="flex items-start justify-between gap-4 border-b px-5 py-4">
-          <div className="min-w-0">
+        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b px-5 py-4">
+          <div className="min-w-0 flex-[1_1_12rem]">
             {title && <h2 className="text-[0.9375rem] font-semibold tracking-tight">{title}</h2>}
             {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
       <div className={cn(!flush && "p-5", bodyClassName)}>{children}</div>

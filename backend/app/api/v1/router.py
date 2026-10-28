@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app import models
 from app.api.deps import deny_roles
-from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings
+from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs
 
 R = models.Role
 # Maintenanciers : maintenance, alertes et flotte en lecture seule.
@@ -22,3 +22,5 @@ api_router.include_router(tolls.router, prefix="/tolls", tags=["tolls"], depende
 api_router.include_router(fuel.router, prefix="/fuel", tags=["fuel"], dependencies=no_mechanic)
 api_router.include_router(stations.router, prefix="/stations", tags=["stations"], dependencies=no_mechanic)
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"], dependencies=no_mechanic)
+api_router.include_router(inspections.router, prefix="/inspections", tags=["inspections"], dependencies=no_mechanic)
+api_router.include_router(needs.router, prefix="/needs", tags=["needs"], dependencies=no_conveyor)

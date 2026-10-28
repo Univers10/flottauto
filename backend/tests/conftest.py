@@ -12,6 +12,7 @@ _TMP = Path(tempfile.mkdtemp(prefix="flottauto-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 os.environ["SECRET_KEY"] = "test-secret-key-" + "x" * 48
 os.environ["UPLOAD_DIR"] = str(_TMP / "uploads")
+os.environ["PRIVATE_UPLOAD_DIR"] = str(_TMP / "private_uploads")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402

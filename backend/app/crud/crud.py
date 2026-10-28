@@ -299,6 +299,27 @@ def check_driver_pin(db: Session, driver: models.Driver, pin: str) -> bool:
     return valid
 
 
+PIN_COLLECTOR_MAX_FAILURES = 10
+
+
+def record_pin_attempt(
+    db: Session, company_id: int, user_id: int, driver_id: int, success: bool, ip: str | None, inspection_id: int | None = None
+) -> None:
+    db.add(models.PinAttempt(company_id=company_id, user_id=user_id, driver_id=driver_id, success=success, ip=ip, inspection_id=inspection_id))
+    db.commit()
+
+
+def collector_throttled(db: Session, user_id: int) -> bool:
+    """True si ce compte a accumulé trop d'échecs de PIN dans l'heure (tous chauffeurs confondus)."""
+    since = _utcnow_naive() - timedelta(hours=1)
+    failures = (
+        db.query(func.count(models.PinAttempt.id))
+        .filter(models.PinAttempt.user_id == user_id, models.PinAttempt.success.is_(False), models.PinAttempt.created_at >= since)
+        .scalar()
+    )
+    return failures >= PIN_COLLECTOR_MAX_FAILURES
+
+
 def update_driver(db: Session, db_obj: models.Driver, obj_in: schemas.DriverUpdate) -> models.Driver:
     update_data = obj_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -378,7 +399,11 @@ def list_maintenance_plans(db: Session, company_id: int):
 # WorkOrder
 
 def create_work_order(
-    db: Session, obj_in: schemas.WorkOrderCreate, company_id: int, created_by_id: int | None = None
+    db: Session,
+    obj_in: schemas.WorkOrderCreate,
+    company_id: int,
+    created_by_id: int | None = None,
+    set_vehicle_status: bool = True,
 ) -> models.WorkOrder:
     data = obj_in.model_dump()
     db_obj = models.WorkOrder(**data, company_id=company_id, created_by_id=created_by_id)
@@ -386,7 +411,7 @@ def create_work_order(
     db.commit()
     db.refresh(db_obj)
     # Set vehicle status to maintenance if curative or preventive
-    vehicle = db.query(models.Vehicle).filter(models.Vehicle.id == db_obj.vehicle_id).first()
+    vehicle = db.query(models.Vehicle).filter(models.Vehicle.id == db_obj.vehicle_id).first() if set_vehicle_status else None
     if vehicle and vehicle.status != models.VehicleStatus.OUT_OF_SERVICE:
         vehicle.status = models.VehicleStatus.IN_MAINTENANCE
         db.add(vehicle)

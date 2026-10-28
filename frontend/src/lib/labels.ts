@@ -1,4 +1,21 @@
-import type { EnergyType, FuelType, StaffType, TollPaymentMethod, VehicleStatus, VehicleType, WorkOrder } from "@/types";
+import type {
+  EnergyType,
+  FuelLevel,
+  FuelType,
+  InspectionKind,
+  InspectionVerdict,
+  ItemStatus,
+  NeedOrigin,
+  NeedPriority,
+  NeedStatus,
+  PhotoSlot,
+  SignatureRole,
+  StaffType,
+  TollPaymentMethod,
+  VehicleStatus,
+  VehicleType,
+  WorkOrder,
+} from "@/types";
 
 /** Ton sémantique d'un statut : pilote la couleur de StatusBadge, jamais utilisé seul sans libellé. */
 export type Tone = "success" | "warning" | "danger" | "info" | "neutral";
@@ -85,3 +102,84 @@ export const requiredVehicleDocuments = ["insurance", "technical_control", "regi
 
 /** Types de justificatifs acceptés par le serveur (PDF, images, Word, Excel). */
 export const DOCUMENT_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx";
+
+// ───────────────────────── États des lieux ─────────────────────────
+export const inspectionKindLabels: Record<InspectionKind, string> = {
+  departure: "Départ",
+  arrival: "Arrivée",
+};
+
+export const inspectionVerdict: Record<InspectionVerdict, StatusDef> = {
+  fit: { label: "Apte", tone: "success" },
+  fit_with_reserves: { label: "Apte avec réserves", tone: "warning" },
+  unfit: { label: "Inapte", tone: "danger" },
+};
+
+export const itemStatus: Record<ItemStatus, StatusDef> = {
+  ok: { label: "OK", tone: "success" },
+  reserve: { label: "Réserve", tone: "warning" },
+  ko: { label: "KO", tone: "danger" },
+  na: { label: "Sans objet", tone: "neutral" },
+};
+
+export const inspectionSectionLabels: Record<string, string> = {
+  hygiene: "Hygiène et confort",
+  mechanical: "Mécanique et sécurité",
+  equipment: "Pièces et outils de bord",
+  technology: "Caméras et outils technologiques",
+  arrival: "Contrôle d'arrivée",
+};
+
+/** Sections où un KO rend le car inapte au départ. */
+export const blockingSections = ["mechanical", "equipment"];
+
+export const photoSlotLabels: Record<PhotoSlot, string> = {
+  front: "Face avant",
+  rear: "Face arrière",
+  left: "Côté gauche",
+  right: "Côté droit",
+  dashboard: "Compteur et jauge",
+  interior_front: "Intérieur avant",
+  interior_rear: "Intérieur arrière",
+  hold: "Soute",
+};
+
+export const photoSlots = Object.keys(photoSlotLabels) as PhotoSlot[];
+
+export const fuelLevelLabels: Record<FuelLevel, string> = {
+  empty: "Réserve",
+  quarter: "1/4",
+  half: "1/2",
+  three_quarters: "3/4",
+  full: "Plein",
+};
+
+export const signatureRoleLabels: Record<SignatureRole, string> = {
+  station_manager: "Chef de gare",
+  driver: "Chauffeur",
+  conveyor: "Convoyeur",
+};
+
+// ───────────────────────── Besoins ─────────────────────────
+export const needPriority: Record<NeedPriority, StatusDef> = {
+  before_departure: { label: "Avant le départ", tone: "danger" },
+  this_week: { label: "Cette semaine", tone: "warning" },
+  to_quote: { label: "À chiffrer", tone: "info" },
+};
+
+export const needStatus: Record<NeedStatus, StatusDef> = {
+  open: { label: "À traiter", tone: "neutral" },
+  validation_requested: { label: "Validation demandée", tone: "warning" },
+  validated: { label: "Validé", tone: "success" },
+  scheduled: { label: "Planifié", tone: "info" },
+  done: { label: "Fait", tone: "success" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+};
+
+export const needOriginLabels: Record<NeedOrigin, string> = {
+  departure_inspection: "État des lieux de départ",
+  arrival_inspection: "État des lieux d'arrivée",
+  odometer: "Compteur",
+  document: "Document",
+  manual: "Saisie manuelle",
+};

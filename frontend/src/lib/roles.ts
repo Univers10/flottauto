@@ -15,7 +15,7 @@ export const roleLabels: Record<Role, string> = {
 
 // Sections accessibles par rôle restreint ; les autres rôles voient tout.
 const restrictedSections: Partial<Record<Role, string[]>> = {
-  mechanic: ["/maintenance", "/alerts", "/settings"],
+  mechanic: ["/maintenance", "/needs", "/alerts", "/settings"],
   // Le convoyeur signe les états des lieux (phase 1) ; pour l'instant, seulement ses réglages.
   conveyor: ["/settings"],
 };
@@ -48,4 +48,14 @@ export function canManagePins(role: Role): boolean {
 
 export function canDeleteWorkOrders(role: Role): boolean {
   return role === "admin" || role === "super_admin" || role === "manager" || role === "operations_supervisor";
+}
+
+/** Tenir et signer les états des lieux, gérer la liste des besoins. */
+export function canRunInspections(role: Role): boolean {
+  return ["super_admin", "admin", "manager", "station_manager", "operations_supervisor"].includes(role);
+}
+
+/** Valider une dépense (un besoin) : le superviseur des opérations, ou un administrateur. */
+export function canValidateNeeds(role: Role): boolean {
+  return role === "admin" || role === "super_admin" || role === "operations_supervisor";
 }

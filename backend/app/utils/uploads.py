@@ -64,12 +64,14 @@ def _read_limited(file: UploadFile, max_bytes: int) -> bytes:
     return data
 
 
-def _write(rel: list[str], prefix: str, ext: str, data: bytes) -> str:
-    directory = get_settings().UPLOAD_DIR.joinpath(*rel)
+def _write(rel: list[str], prefix: str, ext: str, data: bytes, private: bool = False) -> str:
+    root = get_settings().PRIVATE_UPLOAD_DIR if private else get_settings().UPLOAD_DIR
+    directory = root.joinpath(*rel)
     directory.mkdir(parents=True, exist_ok=True)
     name = f"{prefix}_{os.urandom(6).hex()}{ext}"
     (directory / name).write_bytes(data)
-    return f"/uploads/{'/'.join(rel)}/{name}"
+    key = f"{'/'.join(rel)}/{name}"
+    return key if private else f"/uploads/{key}"
 
 
 def _check_image(file: UploadFile, max_bytes: int) -> tuple[bytes, str]:
@@ -132,4 +134,27 @@ def delete_upload(url: str | None, company_id: int) -> None:
     company_root = (get_settings().UPLOAD_DIR / str(company_id)).resolve()
     path = (get_settings().UPLOAD_DIR / url.removeprefix("/uploads/")).resolve()
     if company_root in path.parents and path.is_file():
+        path.unlink()
+
+
+def save_private_image(
+    file: UploadFile, company_id: int, *parts: str | int, prefix: str = "photo", max_bytes: int = MAX_IMAGE_BYTES
+) -> str:
+    """Enregistre une image dans le stockage privé et renvoie sa clé « <company_id>/… » (pas d'URL publique)."""
+    rel = _relative_dir(company_id, parts)
+    data, ext = _check_image(file, max_bytes)
+    return _write(rel, _slug(prefix, "photo"), ext, data, private=True)
+
+
+def private_path(key: str, company_id: int) -> Path | None:
+    """Chemin d'un fichier privé de la société, ou None si la clé sort de son dossier."""
+    root = (get_settings().PRIVATE_UPLOAD_DIR / str(company_id)).resolve()
+    path = (get_settings().PRIVATE_UPLOAD_DIR / key).resolve()
+    if root in path.parents and path.is_file():
+        return path
+    return None
+
+
+def delete_private(key: str | None, company_id: int) -> None:
+    if key and (path := private_path(key, company_id)):
         path.unlink()

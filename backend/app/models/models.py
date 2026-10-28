@@ -399,3 +399,195 @@ class FuelExpense(Base):
 
     vehicle = relationship("Vehicle")
     driver = relationship("Driver")
+
+
+# ───────────────────────── Exploitation : états des lieux et besoins ─────────────────────────
+
+class InspectionKind(str, enum.Enum):
+    DEPARTURE = "departure"
+    ARRIVAL = "arrival"
+
+
+class InspectionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    VALIDATED = "validated"
+
+
+class ItemStatus(str, enum.Enum):
+    OK = "ok"
+    RESERVE = "reserve"
+    KO = "ko"
+    NA = "na"
+
+
+class FuelLevel(str, enum.Enum):
+    EMPTY = "empty"
+    QUARTER = "quarter"
+    HALF = "half"
+    THREE_QUARTERS = "three_quarters"
+    FULL = "full"
+
+
+class SignatureRole(str, enum.Enum):
+    STATION_MANAGER = "station_manager"
+    DRIVER = "driver"
+    CONVEYOR = "conveyor"
+
+
+class NeedPriority(str, enum.Enum):
+    BEFORE_DEPARTURE = "before_departure"
+    THIS_WEEK = "this_week"
+    TO_QUOTE = "to_quote"
+
+
+class NeedOrigin(str, enum.Enum):
+    DEPARTURE_INSPECTION = "departure_inspection"
+    ARRIVAL_INSPECTION = "arrival_inspection"
+    ODOMETER = "odometer"
+    DOCUMENT = "document"
+    MANUAL = "manual"
+
+
+class NeedStatus(str, enum.Enum):
+    OPEN = "open"
+    VALIDATION_REQUESTED = "validation_requested"
+    VALIDATED = "validated"
+    SCHEDULED = "scheduled"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
+def _str_enum(enum_cls):
+    """Énumération stockée en texte (pas de type natif PostgreSQL à migrer)."""
+    return Enum(enum_cls, native_enum=False, length=32, validate_strings=True)
+
+
+class Inspection(Base):
+    """État des lieux d'un car, au départ ou à l'arrivée (bilan de fin de journée)."""
+
+    __tablename__ = "inspections"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_inspections_company_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id"), nullable=True)
+    kind: Mapped[InspectionKind] = mapped_column(_str_enum(InspectionKind), nullable=False)
+    status: Mapped[InspectionStatus] = mapped_column(_str_enum(InspectionStatus), default=InspectionStatus.DRAFT, nullable=False)
+    number: Mapped[str] = mapped_column(String(64), nullable=False)
+    route_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scheduled_departure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    mileage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fuel_level: Mapped[FuelLevel | None] = mapped_column(_str_enum(FuelLevel), nullable=True)
+    fuel_liters: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    departure_inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
+    arrived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Note et verdict figés à la validation (indépendants des évolutions du barème).
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    vehicle = relationship("Vehicle")
+    station = relationship("Station")
+    driver = relationship("Driver", foreign_keys=[driver_id])
+    conveyor = relationship("Driver", foreign_keys=[conveyor_id])
+    created_by = relationship("User")
+    departure_inspection = relationship("Inspection", remote_side=[id])
+    items = relationship("InspectionItem", cascade="all, delete-orphan", order_by="InspectionItem.position")
+    photos = relationship("InspectionPhoto", cascade="all, delete-orphan")
+    signatures = relationship("InspectionSignature", cascade="all, delete-orphan")
+
+
+class InspectionItem(Base):
+    __tablename__ = "inspection_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey("inspections.id"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str] = mapped_column(String(32), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[ItemStatus | None] = mapped_column(_str_enum(ItemStatus), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class InspectionPhoto(Base):
+    __tablename__ = "inspection_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey("inspections.id"), nullable=False, index=True)
+    slot: Mapped[str] = mapped_column(String(32), nullable=False)
+    file_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_fresh: Mapped[bool] = mapped_column(Boolean, default=True)
+    damage: Mapped[bool] = mapped_column(Boolean, default=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class InspectionSignature(Base):
+    __tablename__ = "inspection_signatures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey("inspections.id"), nullable=False, index=True)
+    role: Mapped[SignatureRole] = mapped_column(_str_enum(SignatureRole), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    signer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    collected_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    signed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class VehicleNeed(Base):
+    """Besoin d'un car (réparation, entretien, achat) ; validé, il devient une intervention."""
+
+    __tablename__ = "vehicle_needs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[NeedPriority] = mapped_column(_str_enum(NeedPriority), nullable=False)
+    origin: Mapped[NeedOrigin] = mapped_column(_str_enum(NeedOrigin), default=NeedOrigin.MANUAL, nullable=False)
+    origin_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
+    estimated_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[NeedStatus] = mapped_column(_str_enum(NeedStatus), default=NeedStatus.OPEN, nullable=False)
+    status_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey("work_orders.id"), nullable=True)
+    validated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    vehicle = relationship("Vehicle")
+
+
+class PinAttempt(Base):
+    """Journal des essais de PIN de signature (audit et limitation par compte qui recueille la signature)."""
+
+    __tablename__ = "pin_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False)
+    inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)

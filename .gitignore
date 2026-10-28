@@ -15,4 +15,5 @@ out/
 
 # Divers
 uploads/
+private_uploads/
 *.db

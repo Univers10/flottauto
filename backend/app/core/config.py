@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     UPLOAD_DIR: Path = BACKEND_DIR / "uploads"
+    # Fichiers sensibles (photos d'états des lieux) : jamais servis en statique, seulement par route authentifiée.
+    PRIVATE_UPLOAD_DIR: Path = BACKEND_DIR / "private_uploads"
 
     class Config:
         env_file = ".env"

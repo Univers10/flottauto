@@ -249,3 +249,130 @@ export interface PaginatedResponse<T> {
   page: number;
   size: number;
 }
+
+// ───────────────────────── États des lieux ─────────────────────────
+export type InspectionKind = "departure" | "arrival";
+export type InspectionStatus = "draft" | "validated";
+export type ItemStatus = "ok" | "reserve" | "ko" | "na";
+export type FuelLevel = "empty" | "quarter" | "half" | "three_quarters" | "full";
+export type SignatureRole = "station_manager" | "driver" | "conveyor";
+export type InspectionVerdict = "fit" | "fit_with_reserves" | "unfit";
+export type PhotoSlot = "front" | "rear" | "left" | "right" | "dashboard" | "interior_front" | "interior_rear" | "hold";
+
+export interface InspectionItem {
+  section: "hygiene" | "mechanical" | "equipment" | "technology" | "arrival";
+  code: string;
+  label: string;
+  status: ItemStatus | null;
+  note: string | null;
+}
+
+export interface InspectionPhoto {
+  id: number;
+  slot: PhotoSlot;
+  captured_at: string | null;
+  is_fresh: boolean;
+  damage: boolean;
+  uploaded_at: string;
+}
+
+export interface InspectionSignature {
+  role: SignatureRole;
+  signer_name: string;
+  signed_at: string;
+}
+
+export interface PersonSummary {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
+export interface Inspection {
+  id: number;
+  company_id: number;
+  vehicle_id: number;
+  station_id: number | null;
+  kind: InspectionKind;
+  status: InspectionStatus;
+  number: string;
+  route_label: string | null;
+  scheduled_departure_at: string | null;
+  driver_id: number | null;
+  conveyor_id: number | null;
+  driver: PersonSummary | null;
+  conveyor: PersonSummary | null;
+  mileage: number | null;
+  fuel_level: FuelLevel | null;
+  fuel_liters: number | null;
+  observations: string | null;
+  departure_inspection_id: number | null;
+  arrived_at: string | null;
+  validated_at: string | null;
+  created_by: Pick<User, "id" | "email" | "first_name" | "last_name"> | null;
+  created_at: string;
+  updated_at: string;
+  items: InspectionItem[];
+  photos: InspectionPhoto[];
+  signatures: InspectionSignature[];
+  score: number | null;
+  verdict: InspectionVerdict | null;
+  missing_photos: PhotoSlot[];
+  ready_to_sign: boolean;
+  km_of_day: number | null;
+  report_delay_minutes: number | null;
+  report_late: boolean | null;
+}
+
+export interface InspectionListItem {
+  id: number;
+  vehicle_id: number;
+  station_id: number | null;
+  kind: InspectionKind;
+  status: InspectionStatus;
+  number: string;
+  route_label: string | null;
+  scheduled_departure_at: string | null;
+  mileage: number | null;
+  created_at: string;
+  validated_at: string | null;
+  score: number | null;
+  verdict: InspectionVerdict | null;
+  photos_count: number;
+  signatures_count: number;
+}
+
+export interface DayReport {
+  km_of_day: number | null;
+  fuel_level: FuelLevel | null;
+  fuel_liters: number | null;
+  day_expenses: { fuel: number; tolls: number; total: number };
+  deadlines: {
+    oil_change_due_in_km: number | null;
+    documents: { type: string; expiry_date: string | null; days_left: number | null }[];
+  };
+  needs: VehicleNeed[];
+  needs_total: number;
+}
+
+// ───────────────────────── Besoins des cars ─────────────────────────
+export type NeedPriority = "before_departure" | "this_week" | "to_quote";
+export type NeedOrigin = "departure_inspection" | "arrival_inspection" | "odometer" | "document" | "manual";
+export type NeedStatus = "open" | "validation_requested" | "validated" | "scheduled" | "done" | "cancelled";
+
+export interface VehicleNeed {
+  id: number;
+  vehicle_id: number;
+  title: string;
+  details: string | null;
+  priority: NeedPriority;
+  origin: NeedOrigin;
+  origin_label: string | null;
+  inspection_id: number | null;
+  estimated_cost: number | null;
+  status: NeedStatus;
+  status_note: string | null;
+  work_order_id: number | null;
+  created_at: string;
+  updated_at: string;
+}

@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   Car,
+  ClipboardCheck,
   Fuel,
   Landmark,
   LayoutDashboard,
+  ListTodo,
   Menu,
   Settings,
   Users,
@@ -34,7 +36,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/vehicles", label: "Véhicules", icon: Car },
       { href: "/drivers", label: "Personnel", icon: Users },
+      { href: "/inspections", label: "États des lieux", icon: ClipboardCheck },
       { href: "/maintenance", label: "Maintenance", icon: Wrench },
+      { href: "/needs", label: "Besoins", icon: ListTodo },
     ],
   },
   {

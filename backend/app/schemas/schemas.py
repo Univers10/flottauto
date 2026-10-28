@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
+from app.models.models import FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
 
 
 # Common
@@ -503,3 +504,175 @@ class DashboardStats(BaseModel):
     upcoming_maintenance: int
     average_fleet_age_years: float | None
     cost_this_month: Decimal | None
+
+
+# ───────────────────────── États des lieux ─────────────────────────
+class InspectionCreate(BaseModel):
+    vehicle_id: int
+    kind: InspectionKind
+    station_id: int | None = None
+    route_label: str | None = Field(None, max_length=255)
+    scheduled_departure_at: datetime | None = None
+    driver_id: int | None = None
+    conveyor_id: int | None = None
+
+
+class InspectionUpdate(BaseModel):
+    station_id: int | None = None
+    route_label: str | None = Field(None, max_length=255)
+    scheduled_departure_at: datetime | None = None
+    driver_id: int | None = None
+    conveyor_id: int | None = None
+    mileage: int | None = Field(None, ge=0, le=5_000_000)
+    fuel_level: FuelLevel | None = None
+    fuel_liters: int | None = Field(None, ge=0, le=2000)
+    observations: str | None = Field(None, max_length=5000)
+
+
+class InspectionItemSet(BaseModel):
+    code: str = Field(..., max_length=64)
+    status: ItemStatus | None = None
+    note: str | None = Field(None, max_length=500)
+
+
+class InspectionItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    section: str
+    code: str
+    label: str
+    status: ItemStatus | None
+    note: str | None
+
+
+class InspectionPhotoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slot: str
+    captured_at: datetime | None
+    is_fresh: bool
+    damage: bool
+    uploaded_at: datetime
+
+
+class InspectionSignatureRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    role: SignatureRole
+    signer_name: str
+    signed_at: datetime
+
+
+class SignatureCreate(BaseModel):
+    role: SignatureRole
+    pin: str | None = Field(None, pattern=r"^[0-9]{4,6}$")
+
+
+class PersonSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    first_name: str
+    last_name: str
+
+
+class InspectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_id: int
+    vehicle_id: int
+    station_id: int | None
+    kind: InspectionKind
+    status: InspectionStatus
+    number: str
+    route_label: str | None
+    scheduled_departure_at: datetime | None
+    driver_id: int | None
+    conveyor_id: int | None
+    driver: PersonSummary | None = None
+    conveyor: PersonSummary | None = None
+    mileage: int | None
+    fuel_level: FuelLevel | None
+    fuel_liters: int | None
+    observations: str | None
+    departure_inspection_id: int | None
+    arrived_at: datetime | None
+    validated_at: datetime | None
+    created_by: UserSummary | None = None
+    created_at: datetime
+    updated_at: datetime
+    items: list[InspectionItemRead] = []
+    photos: list[InspectionPhotoRead] = []
+    signatures: list[InspectionSignatureRead] = []
+    # Calculés par le service
+    score: int | None = None
+    verdict: str | None = None
+    missing_photos: list[str] = []
+    ready_to_sign: bool = False
+    km_of_day: int | None = None
+    report_delay_minutes: int | None = None
+    report_late: bool | None = None
+
+
+class InspectionListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    vehicle_id: int
+    station_id: int | None
+    kind: InspectionKind
+    status: InspectionStatus
+    number: str
+    route_label: str | None
+    scheduled_departure_at: datetime | None
+    mileage: int | None
+    created_at: datetime
+    validated_at: datetime | None
+    score: int | None = None
+    verdict: str | None = None
+    photos_count: int = 0
+    signatures_count: int = 0
+
+
+# ───────────────────────── Besoins des cars ─────────────────────────
+class VehicleNeedCreate(BaseModel):
+    vehicle_id: int
+    title: str = Field(..., min_length=2, max_length=255)
+    details: str | None = Field(None, max_length=2000)
+    priority: NeedPriority
+    estimated_cost: int | None = Field(None, ge=0, le=1_000_000_000)
+
+
+class VehicleNeedUpdate(BaseModel):
+    title: str = Field(None, min_length=2, max_length=255)
+    details: str | None = Field(None, max_length=2000)
+    priority: NeedPriority = None
+    estimated_cost: int | None = Field(None, ge=0, le=1_000_000_000)
+    status: NeedStatus = None
+    status_note: str | None = Field(None, max_length=255)
+
+
+class VehicleNeedRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    vehicle_id: int
+    title: str
+    details: str | None
+    priority: NeedPriority
+    origin: NeedOrigin
+    origin_label: str | None
+    inspection_id: int | None
+    estimated_cost: int | None
+    status: NeedStatus
+    status_note: str | None
+    work_order_id: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class VehicleNeedList(BaseModel):
+    items: list[VehicleNeedRead]
+    total_estimated: int
