@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Departure, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -303,3 +303,8 @@ export async function verifyExitPass(token: string): Promise<ExitPassVerificatio
   if (!res.ok) throw new Error("Vérification impossible");
   return res.json();
 }
+
+// Pont ITTS Gestion (administration)
+export const getIttsStatus = () => api.get<IttsBridgeStatus>("/integrations/itts/status");
+export const mapIttsBus = (itts_bus_id: string, vehicle_id: number) =>
+  api.post<{ replayed: number }>("/integrations/itts/bus-mappings", { itts_bus_id, vehicle_id });

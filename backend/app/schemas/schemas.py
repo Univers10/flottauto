@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -772,3 +772,71 @@ class ReplacementProposal(BaseModel):
     last_score: int | None
     oil_change_due_in_km: int | None
     documents_status: str
+
+
+# ───────────────────────── Pont ITTS Gestion ─────────────────────────
+class IttsRef(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64)
+
+
+class IttsStation(IttsRef):
+    code: str = Field(..., min_length=1, max_length=20, pattern=r"\S")
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+class IttsBus(IttsRef):
+    plate: str = Field(..., min_length=1, max_length=50)
+    number: str | None = Field(None, max_length=20)
+
+
+class IttsPerson(IttsRef):
+    name: str = Field(..., min_length=1, max_length=200)
+    phone: str | None = Field(None, max_length=50)
+
+
+class IttsRoute(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: str = Field(..., alias="from", max_length=255)
+    to: str = Field(..., max_length=255)
+
+
+class IttsDeparture(IttsRef):
+    number: int | None = None
+    service_date: str | None = Field(None, max_length=10)
+    departure_at: datetime
+    status: str = Field(..., max_length=32)
+    mode: str | None = Field(None, max_length=32)
+    route: IttsRoute
+    station: IttsStation
+    bus: IttsBus
+    driver: IttsPerson | None = None
+    conveyor: IttsPerson | None = None
+    departed_at: datetime | None = None
+
+
+class IttsEvent(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64)
+    type: Literal["departure.upserted", "departure.cancelled", "departure.departed"]
+    occurred_at: datetime
+    departure: IttsDeparture
+
+
+class IttsEventResult(BaseModel):
+    status: Literal["processed", "duplicate", "pending_mapping"]
+
+
+class IttsAuthorization(BaseModel):
+    authorized: bool
+    status: Literal["green", "orange", "red", "unknown"]
+    reason: str | None = None
+    exit_pass_number: str | None = None
+    valid_until: datetime | None = None
+    url: str | None = None
+
+
+class IttsBusMapping(BaseModel):
+    itts_bus_id: str = Field(..., min_length=1, max_length=64)
+    vehicle_id: int
+    # Remplacer l'association existante du car FlottAuto (sinon 409).
+    force: bool = False

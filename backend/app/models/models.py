@@ -642,3 +642,22 @@ class Departure(Base):
     driver = relationship("Driver", foreign_keys=[driver_id])
     conveyor = relationship("Driver", foreign_keys=[conveyor_id])
     inspection = relationship("Inspection")
+
+
+class IntegrationEvent(Base):
+    """Événement reçu d'ITTS Gestion : traité une seule fois, conservé pour l'audit et le rejeu."""
+
+    __tablename__ = "integration_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # identifiant d'événement ITTS (uuid v7)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # processed / pending_mapping / error
+    itts_departure_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    itts_bus_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bus_plate: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # heure du changement dans ITTS (UTC)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -13,6 +13,8 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 os.environ["SECRET_KEY"] = "test-secret-key-" + "x" * 48
 os.environ["UPLOAD_DIR"] = str(_TMP / "uploads")
 os.environ["PRIVATE_UPLOAD_DIR"] = str(_TMP / "private_uploads")
+os.environ["ITTS_SHARED_SECRET"] = "itts-test-secret-0123456789abcdef0123"
+os.environ["ITTS_COMPANY_ID"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402

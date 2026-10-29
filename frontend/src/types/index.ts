@@ -436,3 +436,27 @@ export interface ReplacementProposal {
   oil_change_due_in_km: number | null;
   documents_status: "ok" | "warning";
 }
+
+// Pont ITTS Gestion
+export interface IttsEventLog {
+  id: string;
+  type: "departure.upserted" | "departure.cancelled" | "departure.departed";
+  status: "received" | "processed" | "pending_mapping" | "error";
+  itts_departure_id: string | null;
+  bus_plate: string | null;
+  received_at: string;
+  error: string | null;
+}
+
+export interface IttsPendingMapping {
+  itts_bus_id: string;
+  plate: string | null;
+  events: number;
+}
+
+export interface IttsBridgeStatus {
+  enabled: boolean;
+  last_event_at: string | null;
+  events: IttsEventLog[];
+  pending_mappings: IttsPendingMapping[];
+}

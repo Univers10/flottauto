@@ -38,6 +38,7 @@ from app.models.models import (
     PinAttempt,
     Departure,
     DepartureStatus,
+    IntegrationEvent,
 )
 
 __all__ = [
@@ -80,4 +81,5 @@ __all__ = [
     "PinAttempt",
     "Departure",
     "DepartureStatus",
+    "IntegrationEvent",
 ]

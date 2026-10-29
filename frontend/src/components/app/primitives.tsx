@@ -85,7 +85,7 @@ export function Plate({ value, size = "md", className }: { value: string; size?:
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-[5px] border border-border-strong bg-card font-mono font-semibold tracking-wider text-foreground uppercase shadow-xs",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-[5px] border border-border-strong bg-card font-mono font-semibold tracking-wider text-foreground uppercase shadow-xs",
         size === "sm" && "h-5 px-1.5 text-[10.5px]",
         size === "md" && "h-6 px-2 text-xs",
         size === "lg" && "h-8 px-3 text-sm",

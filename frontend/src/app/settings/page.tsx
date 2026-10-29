@@ -36,6 +36,7 @@ import {
 } from "@/lib/api";
 import { canEditOperationsSettings, canManageUsers, roleLabels } from "@/lib/roles";
 import { formatDate, fullName, initials } from "@/lib/format";
+import { IttsIntegration } from "@/components/settings/itts-integration";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import type { OperationsSettings, Role, Station, User } from "@/types";
@@ -231,6 +232,14 @@ function SettingsContent() {
             }
           >
             <OperationsSettingsForm canEdit={canEditOps} />
+          </SettingsSection>
+        )}
+        {canEditOps && (
+          <SettingsSection
+            title="Intégration ITTS"
+            description="Liaison avec l'application de gare ITTS Gestion : départs reçus, cars à associer et contrôle des sorties."
+          >
+            <IttsIntegration />
           </SettingsSection>
         )}
       </div>
