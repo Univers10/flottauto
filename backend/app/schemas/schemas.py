@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
-from app.models.models import ConvoyPurpose, ConvoyStatus, PaymentMethod
+from app.models.models import ApprovalChannel, ConvoyPurpose, ConvoyStatus, PaymentMethod, ProofKind
 from app.models.models import DepartureStatus, FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
 
 
@@ -369,6 +369,11 @@ class WorkOrderUpdate(BaseModel):
     remaining_due: Decimal | None = None
     not_covered: Decimal | None = None
     external_garage: str | None = Field(None, max_length=255)
+    mileage_at_creation: int | None = Field(None, ge=0)
+    location: str | None = Field(None, max_length=255)
+    garage_phone: str | None = Field(None, max_length=50)
+    payment_method: PaymentMethod | None = None
+    payment_reference: str | None = Field(None, max_length=100)
 
 
 class WorkOrderPhotoRead(BaseModel):
@@ -379,6 +384,7 @@ class WorkOrderPhotoRead(BaseModel):
     work_order_id: int
     file_url: str
     caption: str | None
+    kind: ProofKind | None = None
     created_at: datetime
 
 
@@ -405,6 +411,95 @@ class WorkOrderRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     photos: list[WorkOrderPhotoRead] = []
+
+
+# Intervention + facture (circuit de la maquette 4)
+class WorkOrderLineIn(BaseModel):
+    label: str = Field(..., min_length=1, max_length=255)
+    quantity: int = Field(1, ge=1, le=10_000)
+    unit_price: int = Field(0, ge=0, le=100_000_000)
+    invoice_amount: int | None = Field(None, ge=0, le=1_000_000_000)
+
+
+class WorkOrderLineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    quantity: int
+    unit_price: int
+    quote_amount: int
+    invoice_amount: int | None
+
+
+class WorkOrderLinesUpdate(BaseModel):
+    lines: list[WorkOrderLineIn] = Field(..., max_length=100)
+
+
+class InterventionApprove(BaseModel):
+    channel: ApprovalChannel = ApprovalChannel.IN_APP
+    # Validation par WhatsApp : nom du superviseur qui a répondu (la capture est jointe à part).
+    approver_name: str | None = Field(None, max_length=150)
+
+
+class InterventionInvoice(BaseModel):
+    payment_method: PaymentMethod | None = None
+    payment_reference: str | None = Field(None, max_length=100)
+
+
+class InterventionStep(BaseModel):
+    key: str
+    label: str
+    done: bool
+    current: bool
+    at: datetime | None = None
+    detail: str | None = None
+
+
+class InterventionImpact(BaseModel):
+    total_cost: int
+    this_month: int
+    component: str | None
+    component_count_12m: int
+    warning: str | None = None
+
+
+class PriceFlag(BaseModel):
+    label: str
+    unit_price: int
+    usual_price: int
+
+
+class InterventionRead(WorkOrderRead):
+    location: str | None = None
+    garage_phone: str | None = None
+    reported_at: datetime | None = None
+    reported_by_label: str | None = None
+    quote_sent_at: datetime | None = None
+    approved_at: datetime | None = None
+    approver_label: str | None = None
+    approval_channel: ApprovalChannel | None = None
+    approved_amount: int | None = None
+    invoice_submitted_at: datetime | None = None
+    invoice_total: int | None = None
+    payment_method: PaymentMethod | None = None
+    payment_reference: str | None = None
+    closed_at: datetime | None = None
+    closed_by_label: str | None = None
+    vehicle_label: str = ""
+    lines: list[WorkOrderLineRead] = []
+    quote_total: int = 0
+    gap: int | None = None  # facture − montant validé
+    legacy: bool = False  # intervention d'avant le circuit (historique importé)
+    steps: list[InterventionStep] = []
+    next_action: str | None = None  # quote | approve | done | invoice | close
+    proofs: dict[str, bool] = {}
+    flags: list[str] = []  # needs_reapproval, not_approved, invoice_missing, invoice_late, old_part_missing
+    expense_status: Literal["pending", "reimbursable", "not_reimbursed", "frozen"] = "pending"
+    blockers: list[str] = []  # ce qui empêche l'étape suivante, en clair
+    impact: InterventionImpact | None = None
+    price_compared: int = 0
+    price_flags: list[PriceFlag] = []
 
 
 # Alert
@@ -964,6 +1059,7 @@ class ConvoyPaymentRead(BaseModel):
     method: PaymentMethod
     reference: str | None
     paid_at: datetime
+    recorded_by_name: str | None = None  # agent qui a encaissé
 
 
 class ConvoyLine(BaseModel):

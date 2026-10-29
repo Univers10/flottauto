@@ -226,3 +226,12 @@ def test_numbering_is_numeric_past_999(client, auth, db, company):
     db.add(models.Convoy(company_id=company.id, number=f"CV-{year}-1000", title="b"))
     db.commit()
     assert client.post(API, headers=auth(R.ADMIN), json={"title": "c"}).json()["number"] == f"CV-{year}-1001"
+
+
+def test_payment_keeps_the_agent_name_and_caisse_can_collect(client, auth, vehicle, crew):
+    convoy = _create(client, auth(R.ADMIN), crew=crew, vehicle=vehicle)
+    r = client.post(f"{API}/{convoy['id']}/payments", headers=auth(R.ACCOUNTANT), json={"amount": 500_000, "method": "cash"})
+    assert r.status_code == 201
+    assert r.json()["payments"][0]["recorded_by_name"]
+    assert client.post(f"{API}/{convoy['id']}/payments", headers=auth(R.READER),
+                       json={"amount": 1, "method": "cash"}).status_code == 403

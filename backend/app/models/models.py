@@ -70,6 +70,32 @@ class WorkOrderType(str, enum.Enum):
     CURATIVE = "curative"
 
 
+class PaymentMethod(str, enum.Enum):
+    WAVE = "wave"
+    ORANGE_MONEY = "orange_money"
+    MTN = "mtn"
+    MOOV = "moov"
+    CASH = "cash"
+
+
+class ApprovalChannel(str, enum.Enum):
+    """Comment le superviseur a validé le devis : dans FlottAuto, ou par WhatsApp (capture obligatoire)."""
+    IN_APP = "in_app"
+    WHATSAPP = "whatsapp"
+
+
+class ProofKind(str, enum.Enum):
+    """Justificatifs d'une intervention."""
+    INVOICE = "invoice"
+    NEW_PART = "new_part"
+    OLD_PART = "old_part"
+    APPROVAL_CAPTURE = "approval_capture"
+
+
+def _text_enum(enum_cls):
+    return Enum(enum_cls, native_enum=False, length=32, validate_strings=True)
+
+
 class AlertType(str, enum.Enum):
     DOCUMENT_EXPIRY = "document_expiry"
     MAINTENANCE_DUE = "maintenance_due"
@@ -78,6 +104,7 @@ class AlertType(str, enum.Enum):
     LICENSE_EXPIRY = "license_expiry"
     DEPARTURE_BLOCKED = "departure_blocked"
     DEPARTURE_WARNING = "departure_warning"
+    INVOICE_MISSING = "invoice_missing"
 
 
 class TollPaymentMethod(str, enum.Enum):
@@ -317,9 +344,24 @@ class WorkOrderPhoto(Base):
     work_order_id: Mapped[int] = mapped_column(ForeignKey("work_orders.id"), nullable=False)
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
     caption: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    kind: Mapped[ProofKind | None] = mapped_column(_text_enum(ProofKind), nullable=True)  # justificatif
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     work_order = relationship("WorkOrder", back_populates="photos")
+
+
+class WorkOrderLine(Base):
+    """Ligne du devis puis de la facture d'une intervention (montants en F CFA)."""
+
+    __tablename__ = "work_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    work_order_id: Mapped[int] = mapped_column(ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    unit_price: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # prix unitaire du devis
+    invoice_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # montant facturé de la ligne
 
 
 class WorkOrder(Base):
@@ -340,6 +382,22 @@ class WorkOrder(Base):
     remaining_due: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     not_covered: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     external_garage: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Circuit intervention + facture : besoin → devis → validation → réalisée → facture → clôture.
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    garage_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    quote_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approver_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    approval_channel: Mapped[ApprovalChannel | None] = mapped_column(_text_enum(ApprovalChannel), nullable=True)
+    approved_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    invoice_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    invoice_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payment_method: Mapped[PaymentMethod | None] = mapped_column(_text_enum(PaymentMethod), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
@@ -349,8 +407,11 @@ class WorkOrder(Base):
     )
 
     vehicle = relationship("Vehicle", back_populates="work_orders")
-    created_by = relationship("User")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_id])
+    closed_by = relationship("User", foreign_keys=[closed_by_id])
     photos = relationship("WorkOrderPhoto", back_populates="work_order", cascade="all, delete-orphan")
+    lines = relationship("WorkOrderLine", cascade="all, delete-orphan", order_by="WorkOrderLine.position")
 
 
 class Alert(Base):
@@ -696,14 +757,6 @@ class ConvoyPurpose(str, enum.Enum):
     OTHER = "other"
 
 
-class PaymentMethod(str, enum.Enum):
-    WAVE = "wave"
-    ORANGE_MONEY = "orange_money"
-    MTN = "mtn"
-    MOOV = "moov"
-    CASH = "cash"
-
-
 class Convoy(Base):
     """Convoi : un car loué avec équipage pour un client (pèlerinage, funérailles…), avec son compte et son contrat."""
 
@@ -781,3 +834,13 @@ class ConvoyPayment(Base):
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    created_by: Mapped["User | None"] = relationship(lazy="joined")
+
+    @property
+    def recorded_by_name(self) -> str | None:
+        """Agent qui a encaissé : affiché sur la fiche et le reçu."""
+        u = self.created_by
+        if u is None:
+            return None
+        return " ".join(x for x in (u.first_name, u.last_name) if x) or u.email

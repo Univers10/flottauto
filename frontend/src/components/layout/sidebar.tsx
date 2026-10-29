@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   Bell,
   BusFront,
   ClipboardCheck,
@@ -37,7 +38,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "Activité",
-    items: [{ href: "/convoys", label: "Convois", icon: Route }],
+    items: [
+      { href: "/convoys", label: "Convois", icon: Route },
+      { href: "/reports", label: "Rapports", icon: BarChart3 },
+    ],
   },
   {
     label: "Cars et équipages",

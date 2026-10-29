@@ -143,4 +143,7 @@ def refresh_alerts(db: Session, company_id: int) -> int:
     total += generate_document_expiry_alerts(db, company_id)
     total += generate_maintenance_due_alerts(db, company_id)
     total += generate_license_expiry_alerts(db, company_id)
+    from app.services import interventions  # import local : interventions dépend de crud et des besoins
+
+    total += interventions.generate_invoice_missing_alerts(db, company_id)
     return total

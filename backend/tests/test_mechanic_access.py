@@ -42,7 +42,9 @@ def test_mechanic_work_order_flow(client, auth, vehicle):
     assert r.status_code == 201
     wo = r.json()
     assert wo["created_by"]["email"].startswith("mechanic")
-    assert client.put(f"/api/v1/maintenance/work-orders/{wo['id']}", headers=meca, json={"status": "in_progress", "total_cost": "120.50"}).status_code == 200
+    assert client.put(f"/api/v1/maintenance/work-orders/{wo['id']}", headers=meca, json={"title": "Vidange moteur", "total_cost": "120.50"}).status_code == 200
+    # L'avancement ne passe que par les étapes du circuit.
+    assert client.put(f"/api/v1/maintenance/work-orders/{wo['id']}", headers=meca, json={"status": "in_progress"}).status_code == 409
     photo = client.post(
         f"/api/v1/maintenance/work-orders/{wo['id']}/photos",
         headers=meca,

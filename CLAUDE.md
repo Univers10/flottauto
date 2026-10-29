@@ -39,12 +39,12 @@ Infra: `docker compose up -d` at repo root starts Postgres 16 + Redis (Redis is 
 ## Backend architecture (FastAPI + SQLAlchemy 2.0, sync)
 
 - `app/main.py`: lifespan runs `Base.metadata.create_all` on startup (so new tables appear without migrations; new *columns* on existing tables still need an Alembic migration). Mounts `/uploads` as static files; CORS is wide open.
-- `app/api/v1/router.py`: all routers under `/api/v1` — `auth`, `vehicles`, `drivers`, `maintenance`, `dashboard`, `alerts`, `tolls`, `fuel`.
+- `app/api/v1/router.py`: all routers under `/api/v1` — `auth`, `vehicles`, `drivers`, `maintenance` (work orders + intervention/invoice circuit), `dashboard`, `alerts`, `tolls`, `fuel`, `stations`, `settings`, `inspections`, `needs`, `departures` (+ public `exit-passes`), `convoys`, `reports`, `integrations` (ITTS bridge). Role restrictions per router are deny-lists defined at the top of `router.py`.
 - Single-file layers, each re-exported by its package `__init__.py`:
   - `app/models/models.py` — all ORM models + str enums (`Role`, `VehicleStatus`, `WorkOrderStatus`, `AlertType`, `FuelType`…).
   - `app/schemas/schemas.py` — all Pydantic v2 schemas (`XCreate` / `XUpdate` / `XRead`, list params).
   - `app/crud/crud.py` — plain functions (`create_vehicle`, `list_vehicles`…); routes call `crud.*` and `models.*` / `schemas.*` via the package namespaces. Adding a model/schema/crud function means also exporting it in the matching `__init__.py`.
-  - `app/services/` — business logic: `alerts.py` (generates document-expiry/maintenance alerts, dedup by existing alert), `dashboard.py` (KPIs).
+  - `app/services/` — business logic: `alerts.py` (document-expiry/maintenance/missing-invoice alerts, dedup by existing alert), `dashboard.py` (KPIs), `inspections.py`, `needs.py`, `departures.py` (checklist + exit pass), `convoys.py` (account, contract), `interventions.py` (quote → supervisor approval → done → invoice → closure; 5 % gap rule), `reports.py` (weekly/monthly summary), `itts_bridge.py`.
 - **Multi-tenancy**: every business row has `company_id`. Routes derive it from the JWT user (`_company_id(current_user)` helper in each router) and every crud query must filter on it. Never trust a `company_id` from the request body.
 - Auth: OAuth2 password flow at `POST /api/v1/auth/login` (form-encoded `username`/`password`) → JWT with `sub` = user id. Dependencies in `app/api/deps.py`: `get_current_user`, `require_role(*roles)`, `get_current_active_company`.
 - File uploads (vehicle photos, driver documents, work-order photos) are written to `backend/uploads/<company_id>/` with random-suffixed names and served from `/uploads/...`. `uploads/` and `*.db` are gitignored.

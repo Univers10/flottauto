@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { ApprovalChannel, Intervention, ReportSummary, ProofKind, WorkOrderLineInput, Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -164,6 +164,23 @@ export const updateWorkOrder = (id: number, body: Partial<WorkOrder>) =>
 export const deleteWorkOrder = (id: number) => api.delete(`/maintenance/work-orders/${id}`);
 export const uploadWorkOrderPhoto = (workOrderId: number, formData: FormData) =>
   uploadFile<{ id: number; file_url: string; caption: string | null }>(`/maintenance/work-orders/${workOrderId}/photos`, formData);
+// Intervention + facture : circuit devis → validation → réalisée → facture → clôture
+const iv = (id: number, action = "intervention") => `/maintenance/work-orders/${id}/${action}`;
+export const getIntervention = (id: number) => api.get<Intervention>(iv(id));
+export const setInterventionLines = (id: number, lines: WorkOrderLineInput[]) => api.put<Intervention>(iv(id, "lines"), { lines });
+export const sendInterventionQuote = (id: number) => api.post<Intervention>(iv(id, "send-quote"), {});
+export const approveIntervention = (id: number, channel: ApprovalChannel, approver_name?: string) =>
+  api.post<Intervention>(iv(id, "approve"), { channel, approver_name: approver_name || null });
+export const markInterventionDone = (id: number) => api.post<Intervention>(iv(id, "done"), {});
+export const submitInterventionInvoice = (id: number, body: { payment_method: PaymentMethod | null; payment_reference: string | null }) =>
+  api.post<Intervention>(iv(id, "invoice"), body);
+export const closeIntervention = (id: number) => api.post<Intervention>(iv(id, "close"), {});
+export function uploadInterventionProof(id: number, kind: ProofKind, file: File) {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("kind", kind);
+  return uploadFile<{ id: number; file_url: string }>(iv(id, "photos"), form);
+}
 export const deleteWorkOrderPhoto = (workOrderId: number, photoId: number) =>
   api.delete(`/maintenance/work-orders/${workOrderId}/photos/${photoId}`);
 
@@ -337,3 +354,6 @@ export async function listAllVehicles(): Promise<Vehicle[]> {
     if (res.items.length === 0 || all.length >= res.total) return all;
   }
 }
+
+export const getReportSummary = (start: string, end: string) =>
+  api.get<ReportSummary>(`/reports/summary?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);

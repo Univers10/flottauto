@@ -6,7 +6,7 @@ export const roleLabels: Record<Role, string> = {
   manager: "Gestionnaire",
   driver: "Conducteur",
   mechanic: "Maintenancier",
-  accountant: "Comptable",
+  accountant: "Caisse / comptable",
   reader: "Lecteur",
   station_manager: "Chef de gare",
   operations_supervisor: "Superviseur des opérations",
@@ -68,4 +68,14 @@ export function canManageConvoys(role: Role): boolean {
 /** Encaisser un paiement de convoi (acompte, solde). */
 export function canCollectConvoyPayments(role: Role): boolean {
   return canManageConvoys(role) || role === "accountant" || role === "station_manager";
+}
+
+/** Valider un devis d'intervention dans FlottAuto (le superviseur). */
+export function canApproveExpenses(role: Role): boolean {
+  return ["super_admin", "admin", "operations_supervisor"].includes(role);
+}
+
+/** Clôturer une intervention (chef de gare et hiérarchie). */
+export function canCloseInterventions(role: Role): boolean {
+  return canApproveExpenses(role) || role === "manager" || role === "station_manager";
 }

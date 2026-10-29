@@ -469,8 +469,11 @@ def delete_work_order(db: Session, db_obj: models.WorkOrder) -> None:
     db.commit()
 
 
-def create_work_order_photo(db: Session, work_order_id: int, company_id: int, file_url: str, caption: str | None = None) -> models.WorkOrderPhoto:
-    db_obj = models.WorkOrderPhoto(work_order_id=work_order_id, company_id=company_id, file_url=file_url, caption=caption)
+def create_work_order_photo(
+    db: Session, work_order_id: int, company_id: int, file_url: str, caption: str | None = None,
+    kind: models.ProofKind | None = None,
+) -> models.WorkOrderPhoto:
+    db_obj = models.WorkOrderPhoto(work_order_id=work_order_id, company_id=company_id, file_url=file_url, caption=caption, kind=kind)
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)

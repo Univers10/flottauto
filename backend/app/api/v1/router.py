@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app import models
 from app.api.deps import deny_roles
-from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys
+from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys, reports
 
 R = models.Role
 # Maintenanciers : maintenance, alertes et flotte en lecture seule.
@@ -11,6 +11,8 @@ no_mechanic = [Depends(deny_roles(R.MECHANIC, R.CONVEYOR))]
 mechanic_read_only = [Depends(deny_roles(R.MECHANIC, R.READER, R.ACCOUNTANT, R.DRIVER, allow_read=True)), Depends(deny_roles(R.CONVEYOR))]
 fleet_writers_only = [Depends(deny_roles(R.MECHANIC, R.CONVEYOR)), Depends(deny_roles(R.READER, R.ACCOUNTANT, R.DRIVER, allow_read=True))]
 no_conveyor = [Depends(deny_roles(R.CONVEYOR))]
+# Rapports : encadrement et caisse, pas le personnel de terrain.
+no_field_staff = [Depends(deny_roles(R.MECHANIC, R.CONVEYOR, R.DRIVER))]
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -27,6 +29,7 @@ api_router.include_router(inspections.router, prefix="/inspections", tags=["insp
 api_router.include_router(needs.router, prefix="/needs", tags=["needs"], dependencies=no_conveyor)
 api_router.include_router(departures.router, prefix="/departures", tags=["departures"], dependencies=no_mechanic)
 api_router.include_router(convoys.router, prefix="/convoys", tags=["convoys"], dependencies=no_mechanic)
+api_router.include_router(reports.router, prefix="/reports", tags=["reports"], dependencies=no_field_staff)
 # Vérification publique du QR du bon de sortie (portail de la gare, sans connexion).
 api_router.include_router(departures.public_router, prefix="/exit-passes", tags=["exit-passes"])
 # Pont ITTS Gestion : appels signés (HMAC) sans compte, et administration du pont.

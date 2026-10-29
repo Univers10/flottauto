@@ -649,7 +649,13 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
             </dl>
           </Panel>
 
-          <PaymentPanel convoy={convoy} canPay={canPay} canDelete={!!user && canManageConvoys(user.role)} onChange={(next) => setConvoy(next)} />
+          <PaymentPanel
+            convoy={convoy}
+            canPay={canPay}
+            canDelete={!!user && canManageConvoys(user.role)}
+            agentName={user ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email : null}
+            onChange={(next) => setConvoy(next)}
+          />
 
           <p className="px-1 text-xs text-muted-foreground">
             Valeurs de calcul (gasoil, rations, commission, recette de ligne) réglables dans{" "}
@@ -790,7 +796,7 @@ function PickSelect({ id, value, onChange, options }: { id: string; value: strin
 
 const METHODS: PaymentMethod[] = ["wave", "orange_money", "mtn", "moov", "cash"];
 
-function PaymentPanel({ convoy, canPay, canDelete, onChange }: { convoy: Convoy; canPay: boolean; canDelete: boolean; onChange: (c: Convoy) => void }) {
+function PaymentPanel({ convoy, canPay, canDelete, agentName, onChange }: { convoy: Convoy; canPay: boolean; canDelete: boolean; agentName: string | null; onChange: (c: Convoy) => void }) {
   const a = convoy.account!;
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("wave");
@@ -839,7 +845,10 @@ function PaymentPanel({ convoy, canPay, canDelete, onChange }: { convoy: Convoy;
             <li key={p.id} className="flex items-center justify-between gap-2 py-2">
               <span className="min-w-0">
                 {paymentMethodLabels[p.method]} · {formatDate(p.paid_at)}
-                {p.reference && <span className="block truncate text-xs text-muted-foreground">{p.reference}</span>}
+                <span className="block truncate text-xs text-muted-foreground">
+                  {p.recorded_by_name ? `Encaissé par ${p.recorded_by_name}` : "Agent non renseigné"}
+                  {p.reference && ` · ${p.reference}`}
+                </span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="tabular">{formatNumber(p.amount)}</span>
@@ -882,6 +891,7 @@ function PaymentPanel({ convoy, canPay, canDelete, onChange }: { convoy: Convoy;
           <Button type="submit" className="w-full" disabled={saving || !int(amount)}>
             Encaisser
           </Button>
+          {agentName && <p className="text-xs text-muted-foreground">Le paiement sera enregistré à votre nom : {agentName}.</p>}
         </form>
       )}
       {a.balance > 0 && <p className={cn("mt-3 text-xs font-medium", toneText("danger"))}>Pas d&apos;autorisation de départ tant que le solde n&apos;est pas réglé.</p>}

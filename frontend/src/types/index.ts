@@ -167,7 +167,71 @@ export interface WorkOrderPhoto {
   work_order_id: number;
   file_url: string;
   caption: string | null;
+  kind?: ProofKind | null;
   created_at: string;
+}
+
+export type ProofKind = "invoice" | "new_part" | "old_part" | "approval_capture";
+export type ApprovalChannel = "in_app" | "whatsapp";
+export type InterventionAction = "quote" | "approve" | "done" | "invoice" | "close";
+export type InterventionFlag = "needs_reapproval" | "not_approved" | "invoice_missing" | "invoice_late" | "old_part_missing";
+export type ExpenseStatus = "pending" | "reimbursable" | "not_reimbursed" | "frozen";
+
+export interface WorkOrderLine {
+  id: number;
+  label: string;
+  quantity: number;
+  unit_price: number;
+  quote_amount: number;
+  invoice_amount: number | null;
+}
+
+export interface WorkOrderLineInput {
+  label: string;
+  quantity: number;
+  unit_price: number;
+  invoice_amount: number | null;
+}
+
+export interface InterventionStep {
+  key: "reported" | "quote" | "approve" | "done" | "invoice" | "close";
+  label: string;
+  done: boolean;
+  current: boolean;
+  at: string | null;
+  detail: string | null;
+}
+
+export interface Intervention extends WorkOrder {
+  location: string | null;
+  garage_phone: string | null;
+  reported_at: string | null;
+  reported_by_label: string | null;
+  quote_sent_at: string | null;
+  approved_at: string | null;
+  approver_label: string | null;
+  approval_channel: ApprovalChannel | null;
+  approved_amount: number | null;
+  invoice_submitted_at: string | null;
+  invoice_total: number | null;
+  payment_method: PaymentMethod | null;
+  payment_reference: string | null;
+  closed_at: string | null;
+  closed_by_label: string | null;
+  vehicle_label: string;
+  lines: WorkOrderLine[];
+  quote_total: number;
+  gap: number | null;
+  legacy: boolean;
+  steps: InterventionStep[];
+  next_action: InterventionAction | null;
+  proofs: Record<ProofKind, boolean>;
+  flags: InterventionFlag[];
+  expense_status: ExpenseStatus;
+  blockers: string[];
+  impact: { total_cost: number; this_month: number; component: string | null; component_count_12m: number; warning: string | null } | null;
+  price_compared: number;
+  price_flags: { label: string; unit_price: number; usual_price: number }[];
 }
 
 export interface WorkOrder {
@@ -502,6 +566,7 @@ export interface ConvoyPayment {
   method: PaymentMethod;
   reference: string | null;
   paid_at: string;
+  recorded_by_name: string | null;
 }
 
 export interface ConvoyLine {
@@ -575,3 +640,70 @@ export interface Convoy {
 
 export type ConvoyInput = Partial<Omit<Convoy, "id" | "number" | "status" | "segments" | "payments" | "account" | "vehicle_documents"
   | "departure_id" | "vehicle_label" | "crew_labels" | "contract_generated_at" | "created_at">> & { segments?: ConvoySegment[] };
+
+// ───────────────────────── Rapports ─────────────────────────
+export interface ReportVehicleRow {
+  vehicle_id: number;
+  label: string;
+  registration: string;
+  km: number;
+  fuel: number;
+  fuel_liters: number;
+  tolls: number;
+  maintenance: number;
+  interventions: number;
+  departures: number;
+  convoys: number;
+  convoy_revenue: number;
+  needs_to_plan: number;
+  total_cost: number;
+  cost_per_km: number | null;
+}
+
+export interface ReportSummary {
+  start: string;
+  end: string;
+  label: string;
+  totals: {
+    fuel: number;
+    tolls: number;
+    maintenance: number;
+    expenses: number;
+    km: number;
+    departures: number;
+    departures_departed: number;
+    exit_passes: number;
+    convoys: number;
+    convoy_revenue: number;
+    convoy_margin: number;
+    convoy_balance_due: number;
+    needs_to_plan: number;
+    needs_count: number;
+    needs_before_departure: number;
+  };
+  compliance: {
+    departure_inspections: number;
+    arrival_inspections: number;
+    blocked_alerts: number;
+    warning_alerts: number;
+    invoice_missing_alerts: number;
+  };
+  interventions: { open: number; awaiting_invoice: number; closed: number };
+  vehicles: ReportVehicleRow[];
+  watch: { id: number; title: string; vehicle_label: string; amount: number; expense_status: ExpenseStatus; reasons: string[] }[];
+  repeated: { vehicle_label: string; component: string; count: number }[];
+  convoy_list: {
+    id: number;
+    number: string;
+    title: string;
+    departure_at: string | null;
+    vehicle_label: string | null;
+    revenue: number;
+    charges: number;
+    margin: number;
+    verdict: "profitable" | "weak" | "loss" | "incomplete";
+    verdict_label: string;
+    balance: number;
+  }[];
+  deadlines: { vehicle_label: string; document: string; expiry_date: string; days_left: number }[];
+}
