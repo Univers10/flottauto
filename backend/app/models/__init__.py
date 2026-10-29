@@ -39,6 +39,12 @@ from app.models.models import (
     Departure,
     DepartureStatus,
     IntegrationEvent,
+    ConvoyStatus,
+    ConvoyPurpose,
+    PaymentMethod,
+    Convoy,
+    ConvoySegment,
+    ConvoyPayment,
 )
 
 __all__ = [
@@ -82,4 +88,10 @@ __all__ = [
     "Departure",
     "DepartureStatus",
     "IntegrationEvent",
+    "ConvoyStatus",
+    "ConvoyPurpose",
+    "PaymentMethod",
+    "Convoy",
+    "ConvoySegment",
+    "ConvoyPayment",
 ]

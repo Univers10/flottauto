@@ -22,7 +22,7 @@ En-têtes de chaque requête :
 - `<corps brut>` : les octets exacts du corps (chaîne vide pour un GET).
 - Le destinataire refuse (401) si la signature est fausse ou si l'horodatage s'écarte de plus de **300 s** de son horloge.
 - Comparaison en temps constant.
-- Corps limité à **64 Kio** (413 au-delà). Appels uniquement en HTTPS en production.
+- Corps limité à **256 Kio** côté FlottAuto (413 au-delà ; ITTS garde 64 Kio pour les événements de départ). Appels uniquement en HTTPS en production.
 
 ## 2. ITTS → FlottAuto : événements de départ
 
@@ -57,10 +57,29 @@ En-têtes de chaque requête :
   - `departure.departed` : le départ est passé à `PARTI` dans ITTS (`departed_at` renseigné).
 - Dates : ISO 8601 UTC. `driver` / `conveyor` peuvent être `null`.
 - Réponse `200` : `{"status": "processed" | "duplicate" | "pending_mapping"}`.
-  - `pending_mapping` : le car est inconnu de FlottAuto ; l'événement est conservé et sera rejoué quand un administrateur aura associé le car. **ITTS ne doit pas renvoyer** l'événement.
+  - `pending_mapping` : n'est plus renvoyé depuis la synchronisation des cars (un car inconnu est créé automatiquement) ; les événements restés dans cet état sont rejoués à la synchronisation suivante. **ITTS ne doit pas renvoyer** l'événement.
 - `409` ou `422` : événement rejeté définitivement (mal formé ou incohérent) — **pas de nouvel essai**, ITTS le journalise.
 - Toute autre réponse (autre 4xx, 5xx, délai dépassé) : ITTS réessaie avec un délai croissant. En cas d'erreur de traitement (5xx), FlottAuto conserve l'événement en statut `error` pour l'administrateur.
 - Ordre : FlottAuto compare `occurred_at` ; un `departure.upserted` plus ancien que le dernier événement traité pour ce départ est ignoré (réponse `processed`). `occurred_at` doit donc être l'heure du changement dans ITTS, pas l'heure d'envoi.
+
+### 2 bis. Référentiel : `fleet.snapshot`
+
+Même adresse, même signature. ITTS envoie la liste **complète** des cars, gares et personnel d'une société : au démarrage de son API, toutes les 6 h et après chaque création ou modification d'un car, d'une gare ou d'un membre du personnel. Rien n'est à ressaisir dans FlottAuto.
+
+```json
+{
+  "id": "0192f1c4-…", "type": "fleet.snapshot", "occurred_at": "2026-10-29T10:00:00.000Z",
+  "fleet": {
+    "buses":    [{ "id": "…", "plate": "ITTS-530", "number": "530", "capacity": 63, "active": true }],
+    "stations": [{ "id": "…", "code": "ABO", "name": "Abidjan-Abobo", "city": "Abidjan", "active": true }],
+    "staff":    [{ "id": "…", "name": "SEIDOU SYNAYOKO", "phone": "07…", "role": "CHAUFFEUR", "active": true }]
+  }
+}
+```
+
+- FlottAuto crée ce qui manque et met à jour le reste ; il ne supprime jamais un élément absent de la liste et applique `active` (un car inactif n'est pas créé).
+- Un instantané plus ancien (`occurred_at`) que le dernier appliqué est ignoré. Réponse `200 {"status": "processed" | "duplicate"}`.
+- ITTS fait foi pour le **numéro de parc** (`number`) et le nombre de places ; FlottAuto garde son immatriculation et ses données techniques.
 
 ## 3. ITTS → FlottAuto : autorisation de départ
 
@@ -96,7 +115,7 @@ En-têtes de chaque requête :
 
 | ITTS | FlottAuto | Règle |
 |---|---|---|
-| `Bus.id` / `plate` | `Vehicle.itts_bus_id` / `registration` | Par `itts_bus_id`, sinon par immatriculation normalisée (lettres et chiffres en majuscules). Car inconnu → événement en attente de correspondance manuelle. |
-| `Staff.id` | `Driver.itts_staff_id` | Sinon création automatique (chauffeur ou convoyeur), nom découpé au premier espace. |
-| `Station.id` | `Station.itts_station_id` | Sinon par code, sinon création automatique. |
+| `Bus.id` / `number` / `plate` | `Vehicle.itts_bus_id` / `fleet_number` / `registration` | Par `itts_bus_id`, sinon par numéro de parc (« 530 » = « N°0530 »), sinon par immatriculation normalisée. Car inconnu → **créé automatiquement** (type car, modèle « N°530 »). Le numéro de parc est ensuite repris d'ITTS à chaque synchronisation. |
+| `Staff.id` | `Driver.itts_staff_id` | Sinon même nom (sans accents ni ordre : « KONE Awa » = « Awa Koné »), sinon création automatique (chauffeur ou convoyeur). |
+| `Station.id` | `Station.itts_station_id` | Sinon par code, sinon création automatique ; nom et ville repris d'ITTS. |
 | `Departure.id` | `Departure.itts_departure_id` | Clé du départ. |

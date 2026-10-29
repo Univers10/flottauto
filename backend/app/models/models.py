@@ -159,6 +159,14 @@ class CompanySettings(Base):
     immobilization_daily_rate: Mapped[int] = mapped_column(Integer, default=100000)
     document_warning_days: Mapped[int] = mapped_column(Integer, default=30)
     oil_change_warning_km: Mapped[int] = mapped_column(Integer, default=2000)
+    convoy_consumption_l_100km: Mapped[int] = mapped_column(Integer, default=33, server_default="33")
+    convoy_number_prefix: Mapped[str] = mapped_column(String(20), default="CV", server_default="CV")
+    # Contrat de transport : identité du transporteur imprimée sur le contrat.
+    legal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    legal_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_representative: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contract_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    hotline: Mapped[str | None] = mapped_column(String(50), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -176,6 +184,7 @@ class Station(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(20), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     itts_station_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -188,6 +197,9 @@ class Vehicle(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     registration: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    # Numéro de parc peint sur le car (ex. « 530 ») : identifiant commun avec ITTS Gestion.
+    fleet_number: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    seats: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vin: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
     brand: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -622,6 +634,7 @@ class Departure(Base):
     conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
     itts_departure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    convoy_id: Mapped[int | None] = mapped_column(ForeignKey("convoys.id"), nullable=True, index=True)
     status: Mapped[DepartureStatus] = mapped_column(_str_enum(DepartureStatus), default=DepartureStatus.PLANNED, nullable=False)
     exit_pass_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     exit_pass_issued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -642,6 +655,7 @@ class Departure(Base):
     driver = relationship("Driver", foreign_keys=[driver_id])
     conveyor = relationship("Driver", foreign_keys=[conveyor_id])
     inspection = relationship("Inspection")
+    convoy = relationship("Convoy")
 
 
 class IntegrationEvent(Base):
@@ -661,3 +675,109 @@ class IntegrationEvent(Base):
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ───────────────────────── Convois (location de car avec équipage) ─────────────────────────
+
+class ConvoyStatus(str, enum.Enum):
+    DRAFT = "draft"  # brouillon, contrat non généré
+    CONFIRMED = "confirmed"  # contrat généré, départ créé
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
+class ConvoyPurpose(str, enum.Enum):
+    PILGRIMAGE = "pilgrimage"
+    FUNERAL = "funeral"
+    WEDDING = "wedding"
+    TOURISM = "tourism"
+    CORPORATE = "corporate"
+    SPORT = "sport"
+    OTHER = "other"
+
+
+class PaymentMethod(str, enum.Enum):
+    WAVE = "wave"
+    ORANGE_MONEY = "orange_money"
+    MTN = "mtn"
+    MOOV = "moov"
+    CASH = "cash"
+
+
+class Convoy(Base):
+    """Convoi : un car loué avec équipage pour un client (pèlerinage, funérailles…), avec son compte et son contrat."""
+
+    __tablename__ = "convoys"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_convoys_company_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    number: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[ConvoyStatus] = mapped_column(_str_enum(ConvoyStatus), default=ConvoyStatus.DRAFT, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    purpose: Mapped[ConvoyPurpose] = mapped_column(_str_enum(ConvoyPurpose), default=ConvoyPurpose.OTHER, nullable=False)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    broker_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    broker_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    commission_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)  # vide = valeur des Paramètres
+    departure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    return_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    meeting_point: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id"), nullable=True)
+    seats_sold: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    seats_boarded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    billed_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    daily_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)  # vide = valeur des Paramètres
+    tolls_estimate: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True)
+    backup_vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"), nullable=True)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    relief_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contract_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+
+    vehicle = relationship("Vehicle", foreign_keys=[vehicle_id])
+    backup_vehicle = relationship("Vehicle", foreign_keys=[backup_vehicle_id])
+    driver = relationship("Driver", foreign_keys=[driver_id])
+    relief_driver = relationship("Driver", foreign_keys=[relief_driver_id])
+    conveyor = relationship("Driver", foreign_keys=[conveyor_id])
+    station = relationship("Station")
+    segments = relationship("ConvoySegment", order_by="ConvoySegment.position", cascade="all, delete-orphan")
+    payments = relationship("ConvoyPayment", order_by="ConvoyPayment.paid_at", cascade="all, delete-orphan")
+
+
+class ConvoySegment(Base):
+    """Tronçon de l'itinéraire : km et tarif par place."""
+
+    __tablename__ = "convoy_segments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    convoy_id: Mapped[int] = mapped_column(ForeignKey("convoys.id", ondelete="CASCADE"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    to_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    km: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    price_per_seat: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ConvoyPayment(Base):
+    """Encaissement du convoi (acompte, solde) : Wave, Orange Money, MTN, Moov ou espèces."""
+
+    __tablename__ = "convoy_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    convoy_id: Mapped[int] = mapped_column(ForeignKey("convoys.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    method: Mapped[PaymentMethod] = mapped_column(_str_enum(PaymentMethod), nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    paid_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

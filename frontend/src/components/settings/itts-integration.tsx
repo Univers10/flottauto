@@ -16,6 +16,7 @@ const eventLabels: Record<IttsEventLog["type"], string> = {
   "departure.upserted": "Départ programmé / modifié",
   "departure.cancelled": "Départ annulé",
   "departure.departed": "Car parti",
+  "fleet.snapshot": "Cars, gares et personnel",
 };
 
 /** Toute la flotte (l'API limite les pages à 100 cars). */
@@ -110,9 +111,31 @@ export function IttsIntegration() {
         }
       >
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Les départs programmés dans ITTS Gestion arrivent ici automatiquement. Avant de passer un départ à « parti », ITTS
-          Gestion demande à FlottAuto si le bon de sortie est valide.
+          Rien à ressaisir : les cars, les gares et le personnel d&apos;ITTS Gestion sont recopiés ici automatiquement, ainsi que
+          chaque départ programmé. Avant de passer un départ à « parti », ITTS Gestion demande à FlottAuto si le bon de sortie est
+          valide.
         </p>
+        {status.enabled && (
+          <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+            {[
+              { label: "Cars synchronisés", value: status.synced.vehicles },
+              { label: "Gares", value: status.synced.stations },
+              { label: "Chauffeurs et convoyeurs", value: status.synced.staff },
+            ].map((item) => (
+              <div key={item.label} className="rounded-lg border bg-surface-sunken px-3 py-2">
+                <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                <dd className="text-lg font-semibold tabular">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {status.enabled && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {status.last_snapshot_at
+              ? `Dernière synchronisation complète le ${formatDateTime(status.last_snapshot_at)} (toutes les 6 h et à chaque modification dans ITTS Gestion).`
+              : "Première synchronisation en attente : elle part d'ITTS Gestion au démarrage de son serveur."}
+          </p>
+        )}
       </Panel>
 
       {status.pending_mappings.length > 0 && (

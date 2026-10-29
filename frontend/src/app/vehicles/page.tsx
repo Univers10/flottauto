@@ -40,6 +40,7 @@ function exportVehiclesCsv(vehicles: Vehicle[]) {
   const rows = vehicles.map((v) => [
     v.id,
     v.registration,
+    v.fleet_number ?? "",
     v.brand,
     v.model,
     vehicleTypeLabels[v.vehicle_type] ?? v.vehicle_type,
@@ -106,8 +107,8 @@ export default function VehiclesPage() {
   return (
     <AppShell>
       <PageHeader
-        title="Véhicules"
-        description={`${total} véhicule(s) dans votre flotte`}
+        title="Cars"
+        description={`${total} car(s) dans votre flotte · numéros synchronisés avec ITTS Gestion`}
         actions={
           <>
             <Button variant="outline" onClick={() => exportVehiclesCsv(visible)} disabled={!visible.length}>
@@ -116,7 +117,7 @@ export default function VehiclesPage() {
             </Button>
             <Link href="/vehicles/new" className={buttonVariants()}>
               <Plus className="size-4" />
-              Nouveau véhicule
+              Nouveau car
             </Link>
           </>
         }
@@ -146,13 +147,13 @@ export default function VehiclesPage() {
         ) : visible.length === 0 ? (
           <EmptyState
             icon={Car}
-            title={q || status !== "all" ? "Aucun véhicule ne correspond" : "Aucun véhicule"}
-            description={q || status !== "all" ? "Modifiez la recherche ou le filtre." : "Ajoutez votre premier véhicule pour commencer."}
+            title={q || status !== "all" ? "Aucun car ne correspond" : "Aucun car"}
+            description={q || status !== "all" ? "Modifiez la recherche ou le filtre." : "Ajoutez votre premier car pour commencer."}
             action={
               !q && status === "all" ? (
                 <Link href="/vehicles/new" className={buttonVariants()}>
                   <Plus className="size-4" />
-                  Nouveau véhicule
+                  Nouveau car
                 </Link>
               ) : undefined
             }
@@ -161,7 +162,7 @@ export default function VehiclesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Véhicule</TableHead>
+                <TableHead>Car</TableHead>
                 <TableHead className="hidden sm:table-cell">Immatriculation</TableHead>
                 <TableHead className="hidden md:table-cell">Type</TableHead>
                 <TableHead className="hidden lg:table-cell">Énergie</TableHead>
@@ -187,9 +188,12 @@ export default function VehiclesPage() {
                         </span>
                         <div className="min-w-0">
                           <Link href={`/vehicles/${v.id}`} className="block truncate font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
-                            {v.brand} {v.model}
+                            {v.fleet_number ? `Car N°${v.fleet_number}` : `${v.brand} ${v.model}`}
+                            {v.itts_bus_id && <span className="ml-2 text-[11px] font-normal text-muted-foreground">lié à ITTS</span>}
                           </Link>
-                          <p className="hidden text-xs text-muted-foreground sm:block">{v.year ?? "Année inconnue"}</p>
+                          <p className="hidden text-xs text-muted-foreground sm:block">
+                            {[v.fleet_number ? `${v.brand} ${v.model}` : null, v.seats ? `${v.seats} places` : null, v.year].filter(Boolean).join(" · ") || "—"}
+                          </p>
                           <Plate value={v.registration} size="sm" className="mt-1 sm:hidden" />
                         </div>
                       </div>

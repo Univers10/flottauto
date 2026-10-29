@@ -782,7 +782,7 @@ type OpsForm = Record<OpsKey, string>;
 const opsGroups: {
   title: string;
   description: string;
-  fields: { key: OpsKey; label: string; unit: string; hint?: string; step?: string }[];
+  fields: { key: OpsKey; label: string; unit?: string; hint?: string; step?: string; text?: boolean; optional?: boolean; wide?: boolean }[];
 }[] = [
   {
     title: "Coûts d'exploitation",
@@ -792,6 +792,7 @@ const opsGroups: {
       { key: "driver_daily_ration", label: "Ration chauffeur", unit: "F/jour" },
       { key: "conveyor_daily_ration", label: "Ration convoyeur", unit: "F/jour" },
       { key: "broker_commission_pct", label: "Commission apporteur", unit: "%", step: "0.01" },
+      { key: "convoy_consumption_l_100km", label: "Consommation d'un car (convois)", unit: "L/100 km", hint: "Utilisée si la fiche du car n'en indique pas" },
     ],
   },
   {
@@ -813,6 +814,18 @@ const opsGroups: {
     fields: [
       { key: "document_warning_days", label: "Alerte documents", unit: "jours avant échéance" },
       { key: "oil_change_warning_km", label: "Alerte vidange", unit: "km restants" },
+    ],
+  },
+  {
+    title: "Contrat de convoi",
+    description: "Identité du transporteur imprimée sur les contrats de transport.",
+    fields: [
+      { key: "convoy_number_prefix", label: "Préfixe des numéros", text: true, hint: "Ex. ITTS-CV → ITTS-CV-2027-001" },
+      { key: "legal_name", label: "Raison sociale", text: true, optional: true, wide: true },
+      { key: "legal_details", label: "Mentions légales", text: true, optional: true, wide: true, hint: "Forme, capital, RCCM, NCC" },
+      { key: "legal_representative", label: "Signataire (gérant)", text: true, optional: true },
+      { key: "contract_city", label: "Ville de signature", text: true, optional: true },
+      { key: "hotline", label: "Numéro vert", text: true, optional: true },
     ],
   },
 ];
@@ -849,19 +862,28 @@ function OperationsSettingsForm({ canEdit }: { canEdit: boolean }) {
     () => (form && initial ? opsKeys.filter((k) => form[k] !== initial[k]) : []),
     [form, initial]
   );
-  const invalid = !!form && opsKeys.some((k) => form[k].trim() === "" || Number.isNaN(Number(form[k])));
+  const fieldDefs = useMemo(() => new Map(opsGroups.flatMap((g) => g.fields.map((f) => [f.key, f] as const))), []);
+  const invalid =
+    !!form &&
+    opsKeys.some((k) => {
+      const def = fieldDefs.get(k);
+      if (def?.optional) return false;
+      return form[k].trim() === "" || (!def?.text && Number.isNaN(Number(form[k])));
+    });
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!form || changedKeys.length === 0 || invalid) return;
-    const body: Partial<Omit<OperationsSettings, "updated_at">> = {};
+    const body: Record<string, string | number | null> = {};
     for (const k of changedKeys) {
-      if (k === "broker_commission_pct") body[k] = form[k].trim();
+      const def = fieldDefs.get(k);
+      if (def?.text) body[k] = form[k].trim() || null;
+      else if (k === "broker_commission_pct") body[k] = form[k].trim();
       else body[k] = Number(form[k]);
     }
     setSaving(true);
     try {
-      const updated = await updateOperationsSettings(body);
+      const updated = await updateOperationsSettings(body as Partial<Omit<OperationsSettings, "updated_at">>);
       setSettings(updated);
       setForm(toOpsForm(updated));
       toast.success("Valeurs de calcul enregistrées");
@@ -895,7 +917,16 @@ function OperationsSettingsForm({ canEdit }: { canEdit: boolean }) {
             {opsGroups.map((group) => (
               <FormSection key={group.title} title={group.title} description={group.description}>
                 {group.fields.map((f) => (
-                  <Field key={f.key} label={f.label} htmlFor={`ops_${f.key}`} hint={f.hint}>
+                  <Field key={f.key} label={f.label} htmlFor={`ops_${f.key}`} hint={f.hint} className={f.wide ? "sm:col-span-2" : undefined}>
+                    {f.text ? (
+                      <Input
+                        id={`ops_${f.key}`}
+                        required={!f.optional}
+                        readOnly={!canEdit}
+                        value={form[f.key]}
+                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      />
+                    ) : (
                     <div className="relative">
                       <Input
                         id={`ops_${f.key}`}
@@ -914,6 +945,7 @@ function OperationsSettingsForm({ canEdit }: { canEdit: boolean }) {
                         {f.unit}
                       </span>
                     </div>
+                    )}
                   </Field>
                 ))}
               </FormSection>

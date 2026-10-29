@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
-  Car,
+  BusFront,
   ClipboardCheck,
   Fuel,
+  House,
   Landmark,
-  LayoutDashboard,
   ListTodo,
   Menu,
+  Route,
   Settings,
   TicketCheck,
   Users,
@@ -24,23 +25,33 @@ import type { Role, User } from "@/types";
 
 type NavItem = { href: string; label: string; icon: React.ElementType };
 
+// Menu rangé par tâche, avec les mots du terrain : ce qu'on fait aujourd'hui en premier.
 const navGroups: { label: string; items: NavItem[] }[] = [
   {
-    label: "Pilotage",
+    label: "Aujourd'hui",
     items: [
-      { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+      { href: "/dashboard", label: "Accueil", icon: House },
+      { href: "/departures", label: "Départs", icon: TicketCheck },
       { href: "/alerts", label: "Alertes", icon: Bell },
     ],
   },
   {
-    label: "Flotte",
+    label: "Activité",
+    items: [{ href: "/convoys", label: "Convois", icon: Route }],
+  },
+  {
+    label: "Cars et équipages",
     items: [
-      { href: "/vehicles", label: "Véhicules", icon: Car },
+      { href: "/vehicles", label: "Cars", icon: BusFront },
       { href: "/drivers", label: "Personnel", icon: Users },
-      { href: "/departures", label: "Départs du jour", icon: TicketCheck },
       { href: "/inspections", label: "États des lieux", icon: ClipboardCheck },
-      { href: "/maintenance", label: "Maintenance", icon: Wrench },
-      { href: "/needs", label: "Besoins", icon: ListTodo },
+    ],
+  },
+  {
+    label: "Entretien",
+    items: [
+      { href: "/needs", label: "Besoins des cars", icon: ListTodo },
+      { href: "/maintenance", label: "Réparations", icon: Wrench },
     ],
   },
   {
@@ -65,7 +76,7 @@ function Logo() {
       </span>
       <div className="leading-none">
         <span className="block text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">FlottAuto</span>
-        <span className="mt-1 block text-[10px] font-medium tracking-[0.12em] text-sidebar-muted uppercase">Fleet OS</span>
+        <span className="mt-1 block text-[10px] font-medium tracking-[0.12em] text-sidebar-muted uppercase">Contrôle des cars</span>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 import type {
   ChecklistItemStatus,
+  ConvoyAccount,
+  ConvoyPurpose,
+  ConvoyStatus,
+  PaymentMethod,
   DepartureLight,
   DepartureStatus,
   EnergyType,
@@ -206,4 +210,37 @@ export const checklistItemTone: Record<ChecklistItemStatus, Tone> = {
   warning: "warning",
   blocked: "danger",
   pending: "neutral",
+};
+
+// ───────────────────────── Convois ─────────────────────────
+export const convoyStatus: Record<ConvoyStatus, StatusDef> = {
+  draft: { label: "Brouillon · contrat non généré", tone: "warning" },
+  confirmed: { label: "Contrat généré", tone: "success" },
+  done: { label: "Terminé", tone: "info" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+};
+
+export const convoyPurposeLabels: Record<ConvoyPurpose, string> = {
+  pilgrimage: "Pèlerinage",
+  funeral: "Funérailles",
+  wedding: "Mariage",
+  tourism: "Excursion / tourisme",
+  corporate: "Séminaire / entreprise",
+  sport: "Sport / évènement",
+  other: "Autre",
+};
+
+export const paymentMethodLabels: Record<PaymentMethod, string> = {
+  wave: "Wave",
+  orange_money: "Orange Money",
+  mtn: "MTN",
+  moov: "Moov",
+  cash: "Espèces",
+};
+
+export const convoyVerdictTone: Record<ConvoyAccount["verdict"], Tone> = {
+  profitable: "success",
+  weak: "warning",
+  loss: "danger",
+  incomplete: "neutral",
 };

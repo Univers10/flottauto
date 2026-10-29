@@ -28,7 +28,8 @@ def _post_event(client, event: dict, **sign_kw):
     return client.post(EVENTS, content=body, headers=headers)
 
 
-def _event(etype="departure.upserted", dep_id="itts-dep-1", plate="AB-586-CI", driver="drv-1", conveyor="cvy-1", hours=2, **dep):
+def _event(etype="departure.upserted", dep_id="itts-dep-1", plate="AB-586-CI", driver="drv-1", conveyor="cvy-1", hours=2,
+           number="586", **dep):
     departure = {
         "id": dep_id,
         "number": 3,
@@ -38,13 +39,19 @@ def _event(etype="departure.upserted", dep_id="itts-dep-1", plate="AB-586-CI", d
         "mode": "HEURE_FIXE",
         "route": {"from": "Abidjan-Abobo", "to": "Odienné"},
         "station": {"id": "st-abo", "code": "ABO", "name": "Abidjan-Abobo"},
-        "bus": {"id": "bus-586", "plate": plate, "number": "586"},
+        "bus": {"id": "bus-586", "plate": plate, "number": number},
         "driver": {"id": driver, "name": "SEIDOU SYNAYOKO", "phone": "0700000000"} if driver else None,
         "conveyor": {"id": conveyor, "name": "Awa Koné", "phone": None} if conveyor else None,
         "departed_at": None,
         **dep,
     }
     return {"id": str(uuid.uuid4()), "type": etype, "occurred_at": datetime.now(timezone.utc).isoformat(), "departure": departure}
+
+
+def _snapshot(buses=(), stations=(), staff=(), minutes_ago=0):
+    occurred = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return {"id": str(uuid.uuid4()), "type": "fleet.snapshot", "occurred_at": occurred.isoformat(),
+            "fleet": {"buses": list(buses), "stations": list(stations), "staff": list(staff)}}
 
 
 def _authorization(client, itts_id, bus_id="bus-586"):
@@ -138,16 +145,14 @@ def test_crew_change_updates_and_revokes_pass(client, db, auth, cg, vehicle):
     assert dep.status == models.DepartureStatus.PLANNED and dep.driver.itts_staff_id == "drv-2"
 
 
-def test_unknown_bus_is_pending_then_replayed_after_mapping(client, db, auth, vehicle):
-    r = _post_event(client, _event(plate="ZZ-999-CI"))
-    assert r.json()["status"] == "pending_mapping"
-    assert _dep(db) is None
-    admin = auth(R.ADMIN)
-    status = client.get("/api/v1/integrations/itts/status", headers=admin).json()
-    assert status["enabled"] is True and status["pending_mappings"][0]["plate"] == "ZZ-999-CI"
-    r = client.post("/api/v1/integrations/itts/bus-mappings", headers=admin, json={"itts_bus_id": "bus-586", "vehicle_id": vehicle.id})
-    assert r.status_code == 200 and r.json()["replayed"] == 1
-    assert _dep(db) is not None and db.get(models.Vehicle, vehicle.id).itts_bus_id == "bus-586"
+def test_unknown_bus_is_created_automatically(client, db, auth, vehicle):
+    event = _event(plate="ZZ-999-CI", number="999")
+    event["departure"]["bus"]["id"] = "bus-999"
+    assert _post_event(client, event).json()["status"] == "processed"
+    created = _dep(db).vehicle
+    assert created.id != vehicle.id and created.registration == "ZZ-999-CI"
+    assert created.fleet_number == "999" and created.itts_bus_id == "bus-999"
+    assert created.vehicle_type == models.VehicleType.BUS
 
 
 def test_cancelled_event(client, db, vehicle):
@@ -219,14 +224,16 @@ def test_authorization_requires_matching_bus(client, db, auth, vehicle):
     assert _authorization(client, "itts-dep-1").json()["authorized"] is True
 
 
-def test_authorization_denied_while_bus_change_pending(client, db, auth, vehicle):
+def test_bus_change_moves_departure_and_denies_until_compliant(client, db, auth, vehicle):
     _post_event(client, _event())
     _authorize(client, db, auth, vehicle)
-    # Changement de car vers un car inconnu de FlottAuto : en attente de correspondance.
-    event = _event(plate="ZZ-999-CI")
+    # Changement vers un car inconnu de FlottAuto : créé, bon de sortie annulé.
+    event = _event(plate="ZZ-999-CI", number="999")
     event["departure"]["bus"]["id"] = "bus-999"
-    assert _post_event(client, event).json()["status"] == "pending_mapping"
-    a = _authorization(client, "itts-dep-1").json()
+    assert _post_event(client, event).json()["status"] == "processed"
+    dep = _dep(db)
+    assert dep.vehicle_id != vehicle.id and dep.status == models.DepartureStatus.PLANNED
+    a = _authorization(client, "itts-dep-1", bus_id="bus-999").json()
     assert a["authorized"] is False and a["status"] == "red"
 
 
@@ -240,16 +247,19 @@ def test_stale_upsert_is_ignored(client, db, auth, vehicle):
 
 
 def test_stale_pending_event_not_replayed_over_newer(client, db, auth, vehicle):
-    old = _event(plate="ZZ-999-CI")
+    # Événement resté « car à associer » avant la création automatique (version précédente).
+    old = _event(plate="ZZ-999-CI", number="999")
     old["departure"]["bus"]["id"] = "bus-999"
     old["occurred_at"] = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
-    assert _post_event(client, old).json()["status"] == "pending_mapping"
-    assert _post_event(client, _event()).json()["status"] == "processed"  # car connu, plus récent
-    other = models.Vehicle(company_id=vehicle.company_id, registration="ZZ-999-CI", brand="Iveco", model="Bus")
-    db.add(other)
+    db.add(models.IntegrationEvent(
+        id=old["id"], company_id=vehicle.company_id, type=old["type"], status="pending_mapping",
+        itts_departure_id="itts-dep-1", itts_bus_id="bus-999", bus_plate="ZZ-999-CI", payload=json.dumps(old),
+        occurred_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)))
     db.commit()
-    r = client.post("/api/v1/integrations/itts/bus-mappings", headers=auth(R.ADMIN), json={"itts_bus_id": "bus-999", "vehicle_id": other.id})
-    assert r.status_code == 200
+    assert _post_event(client, _event()).json()["status"] == "processed"  # car connu, plus récent
+    assert _post_event(client, _snapshot(buses=[{"id": "bus-999", "plate": "ZZ-999-CI", "number": "999"}])).status_code == 200
+    db.expire_all()
+    assert db.get(models.IntegrationEvent, old["id"]).status == "processed"
     assert _dep(db).vehicle_id == vehicle.id
 
 
@@ -290,7 +300,7 @@ def test_processing_error_is_recorded_then_retried(client, db, vehicle, monkeypa
 
 
 def test_body_size_and_timestamp_limits(client, vehicle):
-    big = json.dumps({"pad": "x" * 70_000}).encode()
+    big = json.dumps({"pad": "x" * 270_000}).encode()
     headers = {"Content-Type": "application/json", **_signed("POST", EVENTS, big)}
     assert client.post(EVENTS, content=big, headers=headers).status_code == 413
     body = json.dumps(_event()).encode()
@@ -300,13 +310,15 @@ def test_body_size_and_timestamp_limits(client, vehicle):
 
 def test_bus_mapping_overwrite_requires_force(client, db, auth, vehicle):
     _post_event(client, _event())  # lie bus-586 au car
-    event = _event(plate="ZZ-999-CI", dep_id="itts-dep-2")
-    event["departure"]["bus"]["id"] = "bus-999"
-    _post_event(client, event)
     admin = auth(R.ADMIN)
-    body = {"itts_bus_id": "bus-999", "vehicle_id": vehicle.id}
+    body = {"itts_bus_id": "bus-777", "vehicle_id": vehicle.id}
     assert client.post("/api/v1/integrations/itts/bus-mappings", headers=admin, json=body).status_code == 409
     assert client.post("/api/v1/integrations/itts/bus-mappings", headers=admin, json={**body, "force": True}).status_code == 200
+    other = _event(plate="ZZ-999-CI", number="999", dep_id="itts-dep-2")
+    other["departure"]["bus"]["id"] = "bus-999"
+    _post_event(client, other)  # car créé automatiquement
+    taken = {"itts_bus_id": "bus-999", "vehicle_id": vehicle.id, "force": True}
+    assert client.post("/api/v1/integrations/itts/bus-mappings", headers=admin, json=taken).status_code == 409
 
 
 def test_short_secret_rejected():
@@ -316,3 +328,70 @@ def test_short_secret_rejected():
 
     with pytest.raises(ValidationError):
         Settings(DATABASE_URL="sqlite://", SECRET_KEY="x" * 40, ITTS_SHARED_SECRET="too-short")
+
+
+# ───────────────────────── Référentiel ITTS (fleet.snapshot) ─────────────────────────
+
+FLEET_STATIONS = [
+    {"id": "st-abo", "code": "ABO", "name": "Abidjan-Abobo", "city": "Abidjan"},
+    {"id": "st-odn", "code": "ODN", "name": "Odienné", "city": "Odienné"},
+]
+
+
+def test_snapshot_preloads_stations_buses_and_staff(client, db, company):
+    buses = [{"id": "bus-530", "plate": "ITTS-530", "number": "530", "capacity": 63},
+             {"id": "bus-575", "plate": "ITTS-575", "number": "575", "capacity": 63}]
+    staff = [{"id": "drv-1", "name": "SEIDOU SYNAYOKO", "phone": "07", "role": "CHAUFFEUR"},
+             {"id": "cvy-1", "name": "KONE Awa", "role": "CONVOYEUR"}]
+    r = _post_event(client, _snapshot(buses, FLEET_STATIONS, staff))
+    assert r.status_code == 200 and r.json()["status"] == "processed", r.text
+    stations = {s.code: s for s in db.query(models.Station)}
+    assert set(stations) == {"ABO", "ODN"} and stations["ODN"].city == "Odienné"
+    vehicles = {v.fleet_number: v for v in db.query(models.Vehicle)}
+    assert set(vehicles) == {"530", "575"} and vehicles["530"].seats == 63 and vehicles["530"].itts_bus_id == "bus-530"
+    people = {d.itts_staff_id: d for d in db.query(models.Driver)}
+    assert people["cvy-1"].staff_type == models.StaffType.CONVEYOR and people["drv-1"].phone == "07"
+
+
+def test_snapshot_links_existing_vehicles_by_fleet_number_and_plate(client, db, company, auth):
+    admin = auth(R.ADMIN)
+    by_number = client.post("/api/v1/vehicles", headers=admin,
+                            json={"registration": "AA575FZ01", "fleet_number": "575", "brand": "Car", "model": "N°575"}).json()
+    by_plate = client.post("/api/v1/vehicles", headers=admin, json={"registration": "530", "brand": "Car", "model": "N°530"}).json()
+    buses = [{"id": "bus-575", "plate": "ITTS-575", "number": "575", "capacity": 63},
+             {"id": "bus-530", "plate": "ITTS-530", "number": "530", "capacity": 59}]
+    _post_event(client, _snapshot(buses))
+    db.expire_all()
+    assert db.query(models.Vehicle).count() == 2
+    v575, v530 = db.get(models.Vehicle, by_number["id"]), db.get(models.Vehicle, by_plate["id"])
+    assert v575.itts_bus_id == "bus-575" and v575.registration == "AA575FZ01"  # l'immatriculation FlottAuto est gardée
+    assert v530.itts_bus_id == "bus-530" and v530.fleet_number == "530" and v530.seats == 59
+
+
+def test_snapshot_reuses_staff_by_name_and_applies_active(client, db, auth, company):
+    admin = auth(R.ADMIN)
+    d = client.post("/api/v1/drivers", headers=admin, json={"first_name": "Awa", "last_name": "Koné", "staff_type": "conveyor"}).json()
+    staff = [{"id": "cvy-1", "name": "KONE Awa", "role": "CONVOYEUR", "active": False}]
+    _post_event(client, _snapshot(staff=staff))
+    db.expire_all()
+    assert db.query(models.Driver).count() == 1
+    driver = db.get(models.Driver, d["id"])
+    assert driver.itts_staff_id == "cvy-1" and driver.is_active is False
+
+
+def test_snapshot_inactive_bus_not_created_and_stale_snapshot_ignored(client, db, company):
+    _post_event(client, _snapshot([{"id": "bus-1", "plate": "ITTS-1", "number": "1", "active": False}], FLEET_STATIONS))
+    assert db.query(models.Vehicle).count() == 0
+    renamed = [{**FLEET_STATIONS[0], "name": "Gare d'Abobo"}]
+    _post_event(client, _snapshot(stations=renamed))
+    _post_event(client, _snapshot(stations=FLEET_STATIONS, minutes_ago=30))  # plus ancien : ignoré
+    db.expire_all()
+    assert db.query(models.Station).filter_by(code="ABO").one().name == "Gare d'Abobo"
+
+
+def test_snapshot_requires_fleet_and_status_reports_sync(client, auth, company):
+    bad = {"id": "x", "type": "fleet.snapshot", "occurred_at": datetime.now(timezone.utc).isoformat()}
+    assert _post_event(client, bad).status_code == 422
+    _post_event(client, _snapshot([{"id": "bus-530", "plate": "ITTS-530", "number": "530"}], FLEET_STATIONS))
+    status = client.get("/api/v1/integrations/itts/status", headers=auth(R.ADMIN)).json()
+    assert status["synced"] == {"vehicles": 1, "stations": 2, "staff": 0} and status["last_snapshot_at"]

@@ -230,6 +230,8 @@ export default function VehicleDetailPage() {
   const [savingInfo, setSavingInfo] = useState(false);
   const [infoForm, setInfoForm] = useState({
     registration: "",
+    fleet_number: "",
+    seats: "",
     vin: "",
     brand: "",
     model: "",
@@ -276,6 +278,8 @@ export default function VehicleDetailPage() {
   function applyVehicleToInfoForm(v: Vehicle) {
     setInfoForm({
       registration: v.registration || "",
+      fleet_number: v.fleet_number || "",
+      seats: v.seats ? String(v.seats) : "",
       vin: v.vin || "",
       brand: v.brand || "",
       model: v.model || "",
@@ -308,6 +312,9 @@ export default function VehicleDetailPage() {
       ]);
       setVehicle(v);
       applyVehicleToInfoForm(v);
+      // « ?tab=documents » : ouvert depuis un départ bloqué (« Ajouter le document »).
+      const wanted = new URLSearchParams(window.location.search).get("tab");
+      if (wanted) setTab(wanted);
       setDocuments(docs);
       setWorkOrders(orders);
       setDrivers(allDrivers);
@@ -369,6 +376,8 @@ export default function VehicleDetailPage() {
     try {
       const updated = await updateVehicle(vehicle.id, {
         registration: infoForm.registration.trim(),
+        fleet_number: infoForm.fleet_number.trim() || null,
+        seats: infoForm.seats ? Number(infoForm.seats) : null,
         vin: infoForm.vin.trim() || null,
         brand: infoForm.brand.trim(),
         model: infoForm.model.trim(),
@@ -686,7 +695,7 @@ export default function VehicleDetailPage() {
     <AppShell>
       <PageHeader
         title={vehicleName}
-        breadcrumb={[{ label: "Véhicules", href: "/vehicles" }, { label: vehicleName }]}
+        breadcrumb={[{ label: "Cars", href: "/vehicles" }, { label: vehicleName }]}
         actions={
           <>
             <Link href={`/maintenance/new?vehicle_id=${vehicle.id}`} className={buttonVariants({ variant: "outline" })}>
@@ -821,7 +830,10 @@ export default function VehicleDetailPage() {
                   <div className="grid gap-x-10 gap-y-2.5 md:grid-cols-2">
                     <DetailList
                       items={[
+                        { label: "Numéro de parc", value: vehicle.fleet_number ? `N°${vehicle.fleet_number}` : "—" },
                         { label: "Immatriculation", value: <Plate value={vehicle.registration} size="sm" /> },
+                        { label: "Places", value: vehicle.seats ?? "—" },
+                        { label: "ITTS Gestion", value: vehicle.itts_bus_id ? "Lié (synchronisé)" : "Non lié" },
                         { label: "Marque", value: vehicle.brand },
                         { label: "Modèle", value: vehicle.model },
                         { label: "VIN", value: vehicle.vin ? <span className="font-mono text-xs">{vehicle.vin}</span> : "—" },
@@ -878,6 +890,29 @@ export default function VehicleDetailPage() {
                   <Panel title="Modifier le véhicule" description="Les champs marqués d'un astérisque sont obligatoires.">
                     <div className="divide-y">
                       <FormSection title="Identification">
+                        <Field
+                          label="Numéro de parc"
+                          htmlFor="v-fleet-number"
+                          hint={vehicle?.itts_bus_id ? "Repris d'ITTS Gestion à chaque synchronisation" : "Numéro peint sur le car, ex. 530"}
+                        >
+                          <Input
+                            id="v-fleet-number"
+                            className="tabular"
+                            readOnly={!!vehicle?.itts_bus_id}
+                            value={infoForm.fleet_number}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, fleet_number: e.target.value }))}
+                          />
+                        </Field>
+                        <Field label="Nombre de places" htmlFor="v-seats">
+                          <Input
+                            id="v-seats"
+                            type="number"
+                            min={1}
+                            className="tabular"
+                            value={infoForm.seats}
+                            onChange={(e) => setInfoForm((p) => ({ ...p, seats: e.target.value }))}
+                          />
+                        </Field>
                         <Field label="Immatriculation" htmlFor="v-registration" required>
                           <Input
                             id="v-registration"

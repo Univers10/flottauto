@@ -263,10 +263,20 @@ def _operations_items(dep: models.Departure) -> list[dict]:
     else:
         signed = len(insp.signatures) if insp is not None else 0
         signatures = _item("signatures", "Signatures : chef de gare, chauffeur, convoyeur", BLOCKED, f"{signed} / 3")
-    return [
-        _item("roadmap", "Feuille de route et manifeste passagers", PENDING, "Reçus d'ITTS Gestion (pont à venir)"),
-        signatures,
-    ]
+    return [signatures]
+
+
+def _convoy_items(db: Session, dep: models.Departure) -> list[dict]:
+    """Départ d'un convoi : pas de bon de sortie tant que le solde n'est pas réglé."""
+    from app.services import convoys as convoy_svc  # import local : convoys dépend de ce module
+
+    convoy = dep.convoy
+    if convoy.status == models.ConvoyStatus.CANCELLED:
+        return [_item("convoy_paid", "Convoi soldé", BLOCKED, f"Convoi {convoy.number} annulé")]
+    balance = convoy_svc.balance_due(db, convoy)
+    if balance > 0:
+        return [_item("convoy_paid", "Convoi soldé", BLOCKED, f"Reste à payer {convoy_svc.money(balance)}")]
+    return [_item("convoy_paid", "Convoi soldé", OK, f"Convoi {convoy.number} réglé")]
 
 
 def compute_checklist(db: Session, dep: models.Departure, settings: models.CompanySettings | None = None) -> dict:
@@ -281,6 +291,8 @@ def compute_checklist(db: Session, dep: models.Departure, settings: models.Compa
         {"key": "vehicle", "label": "Car", "items": _vehicle_items(db, dep, settings.oil_change_warning_km)},
         {"key": "operations", "label": "Exploitation", "items": _operations_items(dep)},
     ]
+    if dep.convoy_id is not None:
+        groups.append({"key": "convoy", "label": "Convoi", "items": _convoy_items(db, dep)})
     statuses = [it for g in groups for it in g["items"]]
     blocked = [it for it in statuses if it["status"] == BLOCKED]
     if blocked:

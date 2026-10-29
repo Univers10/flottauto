@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 
@@ -308,3 +308,32 @@ export async function verifyExitPass(token: string): Promise<ExitPassVerificatio
 export const getIttsStatus = () => api.get<IttsBridgeStatus>("/integrations/itts/status");
 export const mapIttsBus = (itts_bus_id: string, vehicle_id: number) =>
   api.post<{ replayed: number }>("/integrations/itts/bus-mappings", { itts_bus_id, vehicle_id });
+
+// Convois
+export const listConvoys = (params?: { status?: ConvoyStatus; q?: string }) => {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.q) qs.set("q", params.q);
+  const query = qs.toString();
+  return api.get<Convoy[]>(`/convoys${query ? `?${query}` : ""}`);
+};
+export const getConvoy = (id: number) => api.get<Convoy>(`/convoys/${id}`);
+export const createConvoy = (body: ConvoyInput & { title: string }) => api.post<Convoy>("/convoys", body);
+export const updateConvoy = (id: number, body: ConvoyInput) => request<Convoy>(`/convoys/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+export const deleteConvoy = (id: number) => api.delete(`/convoys/${id}`);
+export const confirmConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/confirm`, {});
+export const completeConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/complete`, {});
+export const cancelConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/cancel`, {});
+export const addConvoyPayment = (id: number, body: { amount: number; method: PaymentMethod; reference?: string | null }) =>
+  api.post<Convoy>(`/convoys/${id}/payments`, body);
+export const deleteConvoyPayment = (id: number, paymentId: number) => api.delete<Convoy>(`/convoys/${id}/payments/${paymentId}`);
+
+/** Toute la flotte (l'API limite les pages à 100 cars). */
+export async function listAllVehicles(): Promise<Vehicle[]> {
+  const all: Vehicle[] = [];
+  for (let page = 1; ; page++) {
+    const res = await listVehicles({ page, size: 100 });
+    all.push(...res.items);
+    if (res.items.length === 0 || all.length >= res.total) return all;
+  }
+}

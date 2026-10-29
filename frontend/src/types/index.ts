@@ -42,6 +42,13 @@ export interface OperationsSettings {
   immobilization_daily_rate: number;
   document_warning_days: number;
   oil_change_warning_km: number;
+  convoy_consumption_l_100km: number;
+  convoy_number_prefix: string;
+  legal_name: string | null;
+  legal_details: string | null;
+  legal_representative: string | null;
+  contract_city: string | null;
+  hotline: string | null;
   updated_at: string;
 }
 
@@ -80,6 +87,9 @@ export interface Vehicle {
   company_id: number;
   driver_id: number | null;
   registration: string;
+  /** Numéro de parc peint sur le car (ex. « 530 »), commun avec ITTS Gestion. */
+  fleet_number: string | null;
+  seats: number | null;
   vin: string | null;
   brand: string;
   model: string;
@@ -382,10 +392,17 @@ export type DepartureStatus = "planned" | "authorized" | "departed" | "cancelled
 export type ChecklistItemStatus = "ok" | "warning" | "blocked" | "pending";
 export type DepartureLight = "green" | "orange" | "red";
 
+export interface ChecklistItem {
+  code: string;
+  label: string;
+  status: ChecklistItemStatus;
+  detail: string | null;
+}
+
 export interface DepartureChecklist {
   status: DepartureLight;
   blocking_reason: string | null;
-  groups: { key: "papers" | "crew" | "vehicle" | "operations"; label: string; items: { code: string; label: string; status: ChecklistItemStatus; detail: string | null }[] }[];
+  groups: { key: "papers" | "crew" | "vehicle" | "operations" | "convoy"; label: string; items: ChecklistItem[] }[];
 }
 
 export interface Departure {
@@ -401,6 +418,7 @@ export interface Departure {
   conveyor: PersonSummary | null;
   inspection_id: number | null;
   itts_departure_id: string | null;
+  convoy_id: number | null;
   status: DepartureStatus;
   exit_pass_number: string | null;
   exit_pass_issued_at: string | null;
@@ -440,7 +458,7 @@ export interface ReplacementProposal {
 // Pont ITTS Gestion
 export interface IttsEventLog {
   id: string;
-  type: "departure.upserted" | "departure.cancelled" | "departure.departed";
+  type: "departure.upserted" | "departure.cancelled" | "departure.departed" | "fleet.snapshot";
   status: "received" | "processed" | "pending_mapping" | "error";
   itts_departure_id: string | null;
   bus_plate: string | null;
@@ -459,4 +477,101 @@ export interface IttsBridgeStatus {
   last_event_at: string | null;
   events: IttsEventLog[];
   pending_mappings: IttsPendingMapping[];
+  last_snapshot_at: string | null;
+  synced: { vehicles: number; stations: number; staff: number };
 }
+
+/* ───────────────────────── Convois ───────────────────────── */
+
+export type ConvoyStatus = "draft" | "confirmed" | "done" | "cancelled";
+export type ConvoyPurpose = "pilgrimage" | "funeral" | "wedding" | "tourism" | "corporate" | "sport" | "other";
+export type PaymentMethod = "wave" | "orange_money" | "mtn" | "moov" | "cash";
+
+export interface ConvoySegment {
+  id?: number;
+  position?: number;
+  from_label: string;
+  to_label: string;
+  km: number;
+  price_per_seat: number;
+}
+
+export interface ConvoyPayment {
+  id: number;
+  amount: number;
+  method: PaymentMethod;
+  reference: string | null;
+  paid_at: string;
+}
+
+export interface ConvoyLine {
+  label: string;
+  detail: string | null;
+  amount: number;
+}
+
+export interface ConvoyAccount {
+  km: number;
+  days: number;
+  price_per_seat: number;
+  revenue_lines: ConvoyLine[];
+  charge_lines: ConvoyLine[];
+  revenue: number;
+  charges: number;
+  margin: number;
+  margin_pct: number | null;
+  revenue_per_day: number | null;
+  line_revenue_per_day: number;
+  line_ratio: number | null;
+  margin_per_km: number | null;
+  margin_per_day: number | null;
+  break_even_seats: number | null;
+  fuel_share_pct: number | null;
+  floor_price: number;
+  verdict: "profitable" | "weak" | "loss" | "incomplete";
+  verdict_label: string;
+  verdict_detail: string;
+  paid: number;
+  balance: number;
+  alerts: string[];
+}
+
+export interface Convoy {
+  id: number;
+  number: string;
+  status: ConvoyStatus;
+  title: string;
+  purpose: ConvoyPurpose;
+  client_name: string | null;
+  client_phone: string | null;
+  broker_name: string | null;
+  broker_phone: string | null;
+  commission_pct: string | null;
+  departure_at: string | null;
+  return_date: string | null;
+  meeting_point: string | null;
+  station_id: number | null;
+  seats_sold: number;
+  seats_boarded: number | null;
+  billed_days: number;
+  daily_rate: number | null;
+  tolls_estimate: number;
+  vehicle_id: number | null;
+  backup_vehicle_id: number | null;
+  driver_id: number | null;
+  relief_driver_id: number | null;
+  conveyor_id: number | null;
+  notes: string | null;
+  contract_generated_at: string | null;
+  created_at: string;
+  segments: ConvoySegment[];
+  payments: ConvoyPayment[];
+  account: ConvoyAccount | null;
+  vehicle_documents: ChecklistItem[];
+  departure_id: number | null;
+  vehicle_label: string | null;
+  crew_labels: Partial<Record<"driver" | "relief_driver" | "conveyor" | "backup_vehicle" | "station", string>>;
+}
+
+export type ConvoyInput = Partial<Omit<Convoy, "id" | "number" | "status" | "segments" | "payments" | "account" | "vehicle_documents"
+  | "departure_id" | "vehicle_label" | "crew_labels" | "contract_generated_at" | "created_at">> & { segments?: ConvoySegment[] };

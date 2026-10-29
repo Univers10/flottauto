@@ -17,3 +17,6 @@ out/
 uploads/
 private_uploads/
 *.db
+
+# Simulateur ITTS (état local)
+backend/scripts/.simulate_itts_state.json

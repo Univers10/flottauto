@@ -59,3 +59,13 @@ export function canRunInspections(role: Role): boolean {
 export function canValidateNeeds(role: Role): boolean {
   return role === "admin" || role === "super_admin" || role === "operations_supervisor";
 }
+
+/** Créer, chiffrer et valider un convoi (contrat). */
+export function canManageConvoys(role: Role): boolean {
+  return ["super_admin", "admin", "manager", "operations_supervisor"].includes(role);
+}
+
+/** Encaisser un paiement de convoi (acompte, solde). */
+export function canCollectConvoyPayments(role: Role): boolean {
+  return canManageConvoys(role) || role === "accountant" || role === "station_manager";
+}

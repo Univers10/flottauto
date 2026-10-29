@@ -1,7 +1,8 @@
 """Pont ITTS Gestion → FlottAuto (contrat : docs/integration-itts.md).
 
 - Événements de départ signés, traités une seule fois (identifiant d'événement) et dans l'ordre (``occurred_at``).
-- Correspondance des cars (sans création automatique), du personnel et des gares (créés au besoin).
+- Référentiel (``fleet.snapshot``) : cars, gares et personnel d'ITTS recopiés dans FlottAuto, sans ressaisie.
+- Correspondance des cars par numéro de parc puis immatriculation ; un car inconnu est créé automatiquement.
 - Autorisation de départ demandée par ITTS juste avant de passer un départ à « parti », pour un car précis.
 """
 import hashlib
@@ -9,6 +10,7 @@ import hmac
 import json
 import re
 import time
+import unicodedata
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
@@ -21,7 +23,7 @@ from app.core.config import get_settings
 from app.services import departures as dep_svc
 
 SIGNATURE_WINDOW_SECONDS = 300
-MAX_BODY_BYTES = 64 * 1024
+MAX_BODY_BYTES = 256 * 1024
 DStatus = models.DepartureStatus
 Event = models.IntegrationEvent
 
@@ -98,44 +100,122 @@ async def verify_request(request: Request) -> bytes:
 
 # ───────────────────────── Correspondances ─────────────────────────
 
-def _plate_key(value: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", value.upper())
+def _plate_key(value: str | None) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
 
 
-def _find_vehicle(db: Session, cid: int, bus: schemas.IttsEvent) -> models.Vehicle | None:
-    vehicle = db.query(models.Vehicle).filter(models.Vehicle.company_id == cid, models.Vehicle.itts_bus_id == bus.id).first()
-    if vehicle:
-        return vehicle
-    key = _plate_key(bus.plate)
-    if not key:
-        return None
-    for candidate in db.query(models.Vehicle).filter(models.Vehicle.company_id == cid, models.Vehicle.itts_bus_id.is_(None)):
-        if _plate_key(candidate.registration) == key:
-            candidate.itts_bus_id = bus.id  # lien mémorisé pour les prochains événements
-            return candidate
-    return None
+def _number_key(value: str | None) -> str:
+    """Numéro de parc comparable : « N°530 », « 0530 » et « 530 » sont le même car."""
+    digits = re.sub(r"\D", "", value or "")
+    return digits.lstrip("0") or digits
 
 
-def _station(db: Session, cid: int, st: schemas.IttsEvent) -> models.Station:
+def _sync_bus_fields(vehicle: models.Vehicle, bus: schemas.IttsBus) -> None:
+    """ITTS fait foi pour le numéro de parc et le nombre de places ; FlottAuto garde l'immatriculation."""
+    vehicle.itts_bus_id = bus.id
+    if bus.number and bus.number.strip():
+        vehicle.fleet_number = bus.number.strip()[:20]
+    capacity = getattr(bus, "capacity", None)
+    if capacity:
+        vehicle.seats = capacity
+
+
+def _find_vehicle(db: Session, cid: int, bus: schemas.IttsBus, create: bool = True,
+                  index: dict | None = None) -> models.Vehicle | None:
+    """Car FlottAuto d'un car ITTS : lien connu, puis numéro de parc, puis immatriculation ; sinon créé.
+
+    ``index`` (instantané) : cars de la société lus une seule fois, {"linked": {itts_id: car}, "unlinked": [cars]}.
+    """
+    vehicles = db.query(models.Vehicle).filter(models.Vehicle.company_id == cid)
+    if index is not None:
+        vehicle = index["linked"].get(bus.id)
+    else:
+        vehicle = vehicles.filter(models.Vehicle.itts_bus_id == bus.id).first()
+    if vehicle is None:
+        unlinked = index["unlinked"] if index is not None else vehicles.filter(models.Vehicle.itts_bus_id.is_(None)).all()
+        number, plate = _number_key(bus.number), _plate_key(bus.plate)
+        vehicle = next((v for v in unlinked if number and _number_key(v.fleet_number) == number), None)
+        if vehicle is None and plate:
+            vehicle = next((v for v in unlinked if _plate_key(v.registration) == plate), None)
+        if vehicle is None and number:
+            vehicle = next((v for v in unlinked if not v.fleet_number and _plate_key(v.registration) == number), None)
+    if vehicle is None:
+        if not create:
+            return None
+        label = (bus.number or "").strip() or bus.plate
+        vehicle = models.Vehicle(
+            company_id=cid,
+            registration=bus.plate[:50],
+            brand="Car",
+            model=f"N°{label}"[:100],
+            vehicle_type=models.VehicleType.BUS,
+            energy=models.EnergyType.DIESEL,
+            notes="Créé automatiquement depuis ITTS Gestion.",
+        )
+        db.add(vehicle)
+    _sync_bus_fields(vehicle, bus)
+    if index is not None:
+        index["linked"][bus.id] = vehicle
+        if vehicle in index["unlinked"]:
+            index["unlinked"].remove(vehicle)
+    else:
+        db.flush()
+    return vehicle
+
+
+def _station(db: Session, cid: int, st: schemas.IttsStation) -> models.Station:
     station = db.query(models.Station).filter(models.Station.company_id == cid, models.Station.itts_station_id == st.id).first()
-    if station:
-        return station
-    code = st.code.strip().upper()[:20]
-    station = db.query(models.Station).filter(models.Station.company_id == cid, models.Station.code == code).first()
-    if station:
+    if station is None:
+        code = st.code.strip().upper()[:20]
+        station = db.query(models.Station).filter(models.Station.company_id == cid, models.Station.code == code).first()
+        if station is None:
+            station = models.Station(company_id=cid, name=st.name[:255], code=code, active=True)
+            db.add(station)
         station.itts_station_id = st.id
-        return station
-    station = models.Station(company_id=cid, name=st.name[:255], code=code, itts_station_id=st.id, active=True)
-    db.add(station)
+    station.name = st.name[:255]
+    if getattr(st, "city", None):
+        station.city = st.city[:100]
     db.flush()
     return station
 
 
-def _person(db: Session, cid: int, person: schemas.IttsEvent | None, staff_type: models.StaffType) -> models.Driver | None:
+def _name_key(value: str) -> str:
+    """Nom comparable sans accents ni ordre : « Koné Awa » = « AWA KONE »."""
+    plain = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().upper()
+    return " ".join(sorted(re.sub(r"[^A-Z ]", " ", plain).split()))
+
+
+def _person(db: Session, cid: int, person: schemas.IttsPerson | None, staff_type: models.StaffType,
+            index: dict | None = None) -> models.Driver | None:
+    """Personnel ITTS : lien connu, puis même nom (fiche saisie à la main), sinon créé.
+
+    ``index`` (instantané) : {"linked": {itts_id: fiche}, "by_name": {nom normalisé: [fiches non liées]}}.
+    """
     if person is None:
         return None
-    found = db.query(models.Driver).filter(models.Driver.company_id == cid, models.Driver.itts_staff_id == person.id).first()
-    if found:
+    drivers = db.query(models.Driver).filter(models.Driver.company_id == cid)
+    if index is not None:
+        found = index["linked"].get(person.id)
+    else:
+        found = drivers.filter(models.Driver.itts_staff_id == person.id).first()
+    if found is None:
+        key = _name_key(person.name)
+        if index is not None:
+            candidates = index["by_name"].get(key) or []
+            found = candidates.pop(0) if key and candidates else None
+        else:
+            found = next(
+                (d for d in drivers.filter(models.Driver.itts_staff_id.is_(None))
+                 if key and _name_key(f"{d.first_name} {d.last_name}") == key),
+                None,
+            )
+        if found is not None:
+            found.itts_staff_id = person.id
+            if index is not None:
+                index["linked"][person.id] = found
+    if found is not None:
+        if person.phone and not found.phone:
+            found.phone = person.phone
         return found
     first, _, last = person.name.strip().partition(" ")
     driver = models.Driver(
@@ -148,8 +228,48 @@ def _person(db: Session, cid: int, person: schemas.IttsEvent | None, staff_type:
         is_active=True,
     )
     db.add(driver)
-    db.flush()
+    if index is not None:
+        index["linked"][person.id] = driver
+    else:
+        db.flush()
     return driver
+
+
+STAFF_TYPES = {"CHAUFFEUR": models.StaffType.DRIVER, "CONVOYEUR": models.StaffType.CONVEYOR}
+
+
+def _apply_fleet(db: Session, cid: int, event: schemas.IttsEvent) -> str:
+    """Référentiel ITTS : gares, cars et personnel créés ou mis à jour ; jamais supprimés."""
+    latest = (
+        db.query(func.max(Event.occurred_at))
+        .filter(Event.company_id == cid, Event.type == "fleet.snapshot", Event.status == "processed", Event.id != event.id)
+        .scalar()
+    )
+    if latest is not None and _utc_naive(event.occurred_at) < latest:
+        return "processed"  # instantané plus ancien que le dernier appliqué
+    fleet = event.fleet
+    for st in fleet.stations:
+        if not st.code.strip():
+            continue
+        station = _station(db, cid, st)
+        station.active = st.active
+    # Index construits une fois : coût linéaire même avec des centaines de cars et de personnes.
+    vehicles = db.query(models.Vehicle).filter(models.Vehicle.company_id == cid).all()
+    vindex = {"linked": {v.itts_bus_id: v for v in vehicles if v.itts_bus_id},
+              "unlinked": [v for v in vehicles if not v.itts_bus_id]}
+    for bus in fleet.buses:
+        # Un car désactivé dans ITTS n'est pas créé ; s'il existe déjà, il reste tel quel dans FlottAuto.
+        _find_vehicle(db, cid, bus, create=bus.active, index=vindex)
+    people = db.query(models.Driver).filter(models.Driver.company_id == cid).all()
+    pindex: dict = {"linked": {d.itts_staff_id: d for d in people if d.itts_staff_id}, "by_name": {}}
+    for d in people:
+        if not d.itts_staff_id:
+            pindex["by_name"].setdefault(_name_key(f"{d.first_name} {d.last_name}"), []).append(d)
+    for person in fleet.staff:
+        driver = _person(db, cid, person, STAFF_TYPES[person.role], index=pindex)
+        driver.is_active = person.active
+    db.flush()
+    return "processed"
 
 
 # ───────────────────────── Traitement des événements ─────────────────────────
@@ -184,6 +304,8 @@ def _infraction_alert(db: Session, dep: models.Departure) -> None:
 
 
 def _apply(db: Session, cid: int, event: schemas.IttsEvent) -> str:
+    if event.type == "fleet.snapshot":
+        return _apply_fleet(db, cid, event)
     d = event.departure
     if event.type == "departure.upserted":
         latest = _latest_processed_at(db, cid, d.id, exclude_id=event.id)
@@ -244,13 +366,14 @@ def _apply(db: Session, cid: int, event: schemas.IttsEvent) -> str:
 
 
 def _new_record(cid: int, raw: bytes, event: schemas.IttsEvent) -> models.IntegrationEvent:
+    d = event.departure
     return Event(
         id=event.id,
         company_id=cid,
         type=event.type,
-        itts_departure_id=event.departure.id,
-        itts_bus_id=event.departure.bus.id,
-        bus_plate=event.departure.bus.plate,
+        itts_departure_id=d.id if d else None,
+        itts_bus_id=d.bus.id if d else None,
+        bus_plate=d.bus.plate if d else None,
         occurred_at=_utc_naive(event.occurred_at),
         payload=raw.decode("utf-8", errors="replace"),
         status="received",
@@ -291,6 +414,8 @@ def handle_event(db: Session, raw: bytes, event: schemas.IttsEvent) -> str:
     record.error = None
     record.processed_at = _now() if status == "processed" else None
     db.commit()
+    if event.type == "fleet.snapshot":
+        replay_all_pending(db, cid)
     return status
 
 
@@ -308,6 +433,13 @@ def replay_pending(db: Session, cid: int, itts_bus_id: str) -> int:
         if handle_event(db, record.payload.encode(), event) == "processed":
             replayed += 1
     return replayed
+
+
+def replay_all_pending(db: Session, cid: int) -> int:
+    """Rejoue les départs restés en attente (cars désormais connus grâce au référentiel)."""
+    bus_ids = [row[0] for row in db.query(Event.itts_bus_id).filter(
+        Event.company_id == cid, Event.status == "pending_mapping", Event.itts_bus_id.is_not(None)).distinct()]
+    return sum(replay_pending(db, cid, bus_id) for bus_id in bus_ids)
 
 
 def map_bus(db: Session, cid: int, payload: schemas.IttsBusMapping) -> int:
@@ -385,4 +517,11 @@ def status(db: Session, cid: int) -> dict:
             for e in events
         ],
         "pending_mappings": list(pending.values()),
+        "last_snapshot_at": db.query(func.max(Event.processed_at)).filter(
+            Event.company_id == cid, Event.type == "fleet.snapshot", Event.status == "processed").scalar(),
+        "synced": {
+            "vehicles": db.query(models.Vehicle).filter(models.Vehicle.company_id == cid, models.Vehicle.itts_bus_id.is_not(None)).count(),
+            "stations": db.query(models.Station).filter(models.Station.company_id == cid, models.Station.itts_station_id.is_not(None)).count(),
+            "staff": db.query(models.Driver).filter(models.Driver.company_id == cid, models.Driver.itts_staff_id.is_not(None)).count(),
+        },
     }

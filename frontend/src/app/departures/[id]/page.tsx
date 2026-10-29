@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { BellRing, BusFront, CircleAlert, ClipboardCheck, Pencil, Printer, XCircle } from "lucide-react";
+import { ArrowRight, BellRing, BusFront, ChevronDown, CircleAlert, ClipboardCheck, Pencil, Printer, XCircle } from "lucide-react";
 import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,8 @@ import { checklistItemTone, departureLight, departureStatus, inspectionVerdict, 
 import { canRunInspections } from "@/lib/roles";
 import { formatDate, formatNumber, fullName } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Departure, Driver, Inspection, ReplacementProposal, Vehicle } from "@/types";
+import { vehicleFullName } from "@/lib/vehicle";
+import type { ChecklistItem, Departure, Driver, Inspection, ReplacementProposal, Vehicle } from "@/types";
 import { toast } from "sonner";
 
 /* ───────────────────────── Utilitaires ───────────────────────── */
@@ -90,6 +91,7 @@ function DepartureDetail({ id }: { id: number }) {
   const [editOpen, setEditOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [pendingReplace, setPendingReplace] = useState<ReplacementProposal | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const refreshRelated = useCallback(async (dep: Departure) => {
     const [veh, insp] = await Promise.all([
@@ -170,7 +172,7 @@ function DepartureDetail({ id }: { id: number }) {
   }
 
   const dep = departure;
-  const registration = vehicle?.registration ?? `#${dep.vehicle_id}`;
+  const registration = vehicle ? vehicleFullName(vehicle) : `#${dep.vehicle_id}`;
   const st = departureStatus[dep.status];
   const active = dep.status === "planned" || dep.status === "authorized";
   const checklist = dep.checklist;
@@ -275,6 +277,21 @@ function DepartureDetail({ id }: { id: number }) {
                 ) : null}
               </div>
 
+              {active && (
+                <NextSteps departure={dep} canEdit={canEdit} busy={busy} onEdit={() => setEditOpen(true)} onInspect={openInspection} />
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowDetails((v) => !v)}
+                aria-expanded={showDetails}
+                className="flex w-full items-center justify-between border-t px-5 py-3 text-left text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              >
+                <span>Voir toutes les vérifications ({checklist.groups.reduce((n, g) => n + g.items.length, 0)})</span>
+                <ChevronDown className={cn("size-4 transition-transform", showDetails && "rotate-180")} />
+              </button>
+
+              {showDetails && (
               <div className="grid gap-x-8 gap-y-5 border-t px-5 py-4 md:grid-cols-2">
                 {checklist.groups.map((group) => (
                   <div key={group.key} className="min-w-0">
@@ -292,6 +309,7 @@ function DepartureDetail({ id }: { id: number }) {
                   </div>
                 ))}
               </div>
+              )}
 
               {canEdit && active && (
                 <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-surface-sunken px-5 py-3">
@@ -662,5 +680,108 @@ function EditDepartureDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ───────────────────────── Étapes restantes ───────────────────────── */
+
+type Fix = { label: string; href?: string; onClick?: () => void };
+
+/** Ce qu'il faut faire, et où, pour lever un point de la check-list. */
+function fixFor(item: ChecklistItem, dep: Departure, onEdit: () => void, onInspect: () => void): Fix | null {
+  const car = `/vehicles/${dep.vehicle_id}`;
+  if (item.code.startsWith("doc_")) return { label: "Ajouter le document", href: `${car}?tab=documents` };
+  switch (item.code) {
+    case "vehicle_status":
+      return { label: "Ouvrir la fiche du car", href: car };
+    case "oil_change":
+      return { label: "Saisir le compteur et la vidange", href: car };
+    case "fuel":
+      return dep.distance_km === null ? { label: "Indiquer la distance", onClick: onEdit } : { label: "Saisir le carburant (état des lieux)", onClick: onInspect };
+    case "driver_license":
+    case "driver_medical":
+      return dep.driver_id ? { label: "Compléter la fiche du chauffeur", href: `/drivers/${dep.driver_id}` } : { label: "Choisir un chauffeur", onClick: onEdit };
+    case "conveyor":
+      return { label: "Choisir un convoyeur", onClick: onEdit };
+    case "inspection":
+      return { label: "Faire l'état des lieux", onClick: onInspect };
+    case "signatures":
+      return { label: "Faire signer", onClick: onInspect };
+    case "convoy_paid":
+      return dep.convoy_id ? { label: "Encaisser le solde", href: `/convoys/${dep.convoy_id}` } : null;
+    default:
+      return null;
+  }
+}
+
+function NextSteps({
+  departure: dep,
+  canEdit,
+  busy,
+  onEdit,
+  onInspect,
+}: {
+  departure: Departure;
+  canEdit: boolean;
+  busy: boolean;
+  onEdit: () => void;
+  onInspect: () => void;
+}) {
+  const items = dep.checklist?.groups.flatMap((g) => g.items) ?? [];
+  const blocked = items.filter((i) => i.status === "blocked");
+  const warnings = items.filter((i) => i.status === "warning");
+  // Signatures et état des lieux se font au même endroit : une seule étape.
+  const steps = blocked.filter((i) => !(i.code === "signatures" && blocked.some((b) => b.code === "inspection")));
+
+  if (dep.status === "authorized") return null;
+  if (steps.length === 0) {
+    return (
+      <div className="border-t px-5 py-4 text-sm">
+        <p className="font-medium">Tout est en règle{warnings.length > 0 ? ", avec des points d'attention" : ""}.</p>
+        <p className="text-muted-foreground">
+          {warnings.length > 0
+            ? `${warnings.length} point(s) orange : le départ est possible, le superviseur sera prévenu.`
+            : "Il ne reste qu'à émettre le bon de sortie."}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="border-t px-5 py-4">
+      <p className="mb-3 text-sm font-semibold">
+        Il reste {steps.length} chose{steps.length > 1 ? "s" : ""} à faire avant de pouvoir faire partir ce car :
+      </p>
+      <ol className="space-y-2">
+        {steps.map((item, i) => {
+          const fix = fixFor(item, dep, onEdit, onInspect);
+          return (
+            <li key={item.code} className="flex flex-col gap-2 rounded-lg border bg-surface-sunken px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular", toneText("danger"))}>
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{item.label}</p>
+                  {item.detail && <p className="text-xs text-muted-foreground">{item.detail}</p>}
+                </div>
+              </div>
+              {canEdit &&
+                fix &&
+                (fix.href ? (
+                  <Link href={fix.href} className={cn(buttonVariants({ size: "sm", variant: "outline" }), "shrink-0")}>
+                    {fix.label}
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                ) : (
+                  <Button size="sm" variant="outline" className="shrink-0" disabled={busy} onClick={fix.onClick}>
+                    {fix.label}
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                ))}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

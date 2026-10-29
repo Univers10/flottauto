@@ -72,6 +72,8 @@ export default function NewVehiclePage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [form, setForm] = useState({
     registration: "",
+    fleet_number: "",
+    seats: "",
     vin: "",
     brand: "",
     model: "",
@@ -126,6 +128,8 @@ export default function NewVehiclePage() {
     try {
       const created = await api.post<Vehicle>("/vehicles", {
         registration: form.registration,
+        fleet_number: form.fleet_number.trim() || null,
+        seats: form.seats ? Number(form.seats) : null,
         vin: form.vin || undefined,
         brand: form.brand,
         model: form.model,
@@ -149,7 +153,7 @@ export default function NewVehiclePage() {
         formData.set("file", photo);
         await uploadVehiclePhoto(created.id, formData);
       }
-      toast.success("Véhicule créé avec succès");
+      toast.success("Car créé avec succès");
       router.push(`/vehicles/${created.id}`);
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la création");
@@ -162,15 +166,21 @@ export default function NewVehiclePage() {
     <AppShell>
       <div className="mx-auto max-w-4xl">
         <PageHeader
-          title="Nouveau véhicule"
-          description="Renseignez les informations du véhicule à ajouter à la flotte."
-          breadcrumb={[{ label: "Véhicules", href: "/vehicles" }, { label: "Nouveau véhicule" }]}
+          title="Nouveau car"
+          description="Renseignez les informations du car à ajouter à la flotte."
+          breadcrumb={[{ label: "Cars", href: "/vehicles" }, { label: "Nouveau car" }]}
         />
 
         <form onSubmit={handleSubmit}>
           <Panel>
             <div className="divide-y">
               <FormSection title="Identification" description="Plaque, marque et modèle sont obligatoires.">
+                <Field label="Numéro de parc" htmlFor="fleet_number" hint="Numéro peint sur le car, le même que dans ITTS Gestion">
+                  <Input id="fleet_number" className="tabular" value={form.fleet_number} onChange={(e) => update("fleet_number", e.target.value)} placeholder="530" />
+                </Field>
+                <Field label="Nombre de places" htmlFor="seats">
+                  <Input id="seats" type="number" min={1} className="tabular" value={form.seats} onChange={(e) => update("seats", e.target.value)} placeholder="63" />
+                </Field>
                 <Field label="Immatriculation" htmlFor="registration" required>
                   <Input
                     id="registration"

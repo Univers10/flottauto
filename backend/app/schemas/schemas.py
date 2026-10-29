@@ -2,9 +2,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
+from app.models.models import ConvoyPurpose, ConvoyStatus, PaymentMethod
 from app.models.models import DepartureStatus, FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
 
 
@@ -93,6 +94,13 @@ class OperationsSettingsUpdate(BaseModel):
     immobilization_daily_rate: int | None = Field(None, ge=0, le=100000000)
     document_warning_days: int | None = Field(None, ge=1, le=365)
     oil_change_warning_km: int | None = Field(None, ge=0, le=100000)
+    convoy_consumption_l_100km: int | None = Field(None, ge=1, le=200)
+    convoy_number_prefix: str | None = Field(None, min_length=1, max_length=20, pattern=r"^[A-Za-z0-9-]+$")
+    legal_name: str | None = Field(None, max_length=255)
+    legal_details: str | None = Field(None, max_length=2000)
+    legal_representative: str | None = Field(None, max_length=255)
+    contract_city: str | None = Field(None, max_length=100)
+    hotline: str | None = Field(None, max_length=50)
 
 
 class OperationsSettingsRead(BaseModel):
@@ -106,6 +114,13 @@ class OperationsSettingsRead(BaseModel):
     immobilization_daily_rate: int
     document_warning_days: int
     oil_change_warning_km: int
+    convoy_consumption_l_100km: int = 33
+    convoy_number_prefix: str = "CV"
+    legal_name: str | None = None
+    legal_details: str | None = None
+    legal_representative: str | None = None
+    contract_city: str | None = None
+    hotline: str | None = None
     updated_at: datetime
 
 
@@ -135,6 +150,7 @@ class StationRead(BaseModel):
     company_id: int
     name: str
     code: str
+    city: str | None = None
     itts_station_id: str | None
     active: bool
     created_at: datetime
@@ -143,6 +159,8 @@ class StationRead(BaseModel):
 # Vehicle
 class VehicleCreate(BaseModel):
     registration: str = Field(..., min_length=1, max_length=50)
+    fleet_number: str | None = Field(None, max_length=20)
+    seats: int | None = Field(None, ge=1, le=120)
     vin: str | None = Field(None, max_length=50)
     driver_id: int | None = None
     brand: str = Field(..., min_length=1, max_length=100)
@@ -175,6 +193,8 @@ class VehicleRead(BaseModel):
     company_id: int
     driver_id: int | None
     registration: str
+    fleet_number: str | None = None
+    seats: int | None = None
     vin: str | None
     brand: str
     model: str
@@ -739,6 +759,7 @@ class DepartureRead(BaseModel):
     conveyor: PersonSummary | None = None
     inspection_id: int | None
     itts_departure_id: str | None
+    convoy_id: int | None = None
     status: DepartureStatus
     exit_pass_number: str | None
     exit_pass_issued_at: datetime | None
@@ -815,11 +836,43 @@ class IttsDeparture(IttsRef):
     departed_at: datetime | None = None
 
 
+class IttsFleetBus(IttsBus):
+    capacity: int | None = Field(None, ge=1, le=120)
+    active: bool = True
+
+
+class IttsFleetStation(IttsStation):
+    city: str | None = Field(None, max_length=100)
+    active: bool = True
+
+
+class IttsFleetStaff(IttsPerson):
+    role: Literal["CHAUFFEUR", "CONVOYEUR"]
+    active: bool = True
+
+
+class IttsFleet(BaseModel):
+    """Référentiel complet d'ITTS Gestion (cars, gares, personnel) : rien n'est supprimé, ``active`` est appliqué."""
+
+    buses: list[IttsFleetBus] = Field(default_factory=list, max_length=1000)
+    stations: list[IttsFleetStation] = Field(default_factory=list, max_length=500)
+    staff: list[IttsFleetStaff] = Field(default_factory=list, max_length=2000)
+
+
 class IttsEvent(BaseModel):
     id: str = Field(..., min_length=1, max_length=64)
-    type: Literal["departure.upserted", "departure.cancelled", "departure.departed"]
+    type: Literal["departure.upserted", "departure.cancelled", "departure.departed", "fleet.snapshot"]
     occurred_at: datetime
-    departure: IttsDeparture
+    departure: IttsDeparture | None = None
+    fleet: IttsFleet | None = None
+
+    @model_validator(mode="after")
+    def _body_matches_type(self):
+        if self.type == "fleet.snapshot" and self.fleet is None:
+            raise ValueError("fleet requis pour fleet.snapshot")
+        if self.type != "fleet.snapshot" and self.departure is None:
+            raise ValueError("departure requis pour un événement de départ")
+        return self
 
 
 class IttsEventResult(BaseModel):
@@ -840,3 +893,147 @@ class IttsBusMapping(BaseModel):
     vehicle_id: int
     # Remplacer l'association existante du car FlottAuto (sinon 409).
     force: bool = False
+
+
+# ───────────────────────── Convois ─────────────────────────
+
+class ConvoySegmentIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    from_label: str = Field(..., min_length=1, max_length=120)
+    to_label: str = Field(..., min_length=1, max_length=120)
+    km: int = Field(0, ge=0, le=10000)
+    price_per_seat: int = Field(0, ge=0, le=10_000_000)
+
+
+class ConvoySegmentRead(ConvoySegmentIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    position: int
+
+
+class ConvoyBase(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(None, min_length=1, max_length=255)
+    purpose: ConvoyPurpose | None = None
+    client_name: str | None = Field(None, max_length=255)
+    client_phone: str | None = Field(None, max_length=50)
+    broker_name: str | None = Field(None, max_length=255)
+    broker_phone: str | None = Field(None, max_length=50)
+    commission_pct: Decimal | None = Field(None, ge=0, le=100)
+    departure_at: datetime | None = None
+    return_date: date | None = None
+    meeting_point: str | None = Field(None, max_length=255)
+    station_id: int | None = None
+    seats_sold: int | None = Field(None, ge=0, le=120)
+    seats_boarded: int | None = Field(None, ge=0, le=120)
+    billed_days: int | None = Field(None, ge=0, le=365)
+    daily_rate: int | None = Field(None, ge=0, le=100_000_000)
+    tolls_estimate: int | None = Field(None, ge=0, le=100_000_000)
+    vehicle_id: int | None = None
+    backup_vehicle_id: int | None = None
+    driver_id: int | None = None
+    relief_driver_id: int | None = None
+    conveyor_id: int | None = None
+    notes: str | None = Field(None, max_length=5000)
+    segments: list[ConvoySegmentIn] | None = Field(None, max_length=50)
+
+
+class ConvoyCreate(ConvoyBase):
+    title: str = Field(..., min_length=1, max_length=255)
+
+
+class ConvoyUpdate(ConvoyBase):
+    pass
+
+
+class ConvoyPaymentCreate(BaseModel):
+    amount: int = Field(..., ge=1, le=1_000_000_000)
+    method: PaymentMethod
+    reference: str | None = Field(None, max_length=100)
+    paid_at: datetime | None = None
+
+
+class ConvoyPaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    amount: int
+    method: PaymentMethod
+    reference: str | None
+    paid_at: datetime
+
+
+class ConvoyLine(BaseModel):
+    label: str
+    detail: str | None = None
+    amount: int
+
+
+class ConvoyAccount(BaseModel):
+    """Compte du convoi et aide à la décision, recalculés à chaque lecture."""
+
+    km: int
+    days: int
+    price_per_seat: int
+    revenue_lines: list[ConvoyLine]
+    charge_lines: list[ConvoyLine]
+    revenue: int
+    charges: int
+    margin: int
+    margin_pct: float | None
+    revenue_per_day: int | None
+    line_revenue_per_day: int
+    line_ratio: float | None
+    margin_per_km: int | None
+    margin_per_day: int | None
+    break_even_seats: int | None
+    fuel_share_pct: float | None
+    floor_price: int
+    verdict: Literal["profitable", "weak", "loss", "incomplete"]
+    verdict_label: str
+    verdict_detail: str
+    paid: int
+    balance: int
+    alerts: list[str]
+
+
+class ConvoyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    number: str
+    status: ConvoyStatus
+    title: str
+    purpose: ConvoyPurpose
+    client_name: str | None
+    client_phone: str | None
+    broker_name: str | None
+    broker_phone: str | None
+    commission_pct: Decimal | None
+    departure_at: datetime | None
+    return_date: date | None
+    meeting_point: str | None
+    station_id: int | None
+    seats_sold: int
+    seats_boarded: int | None
+    billed_days: int
+    daily_rate: int | None
+    tolls_estimate: int
+    vehicle_id: int | None
+    backup_vehicle_id: int | None
+    driver_id: int | None
+    relief_driver_id: int | None
+    conveyor_id: int | None
+    notes: str | None
+    contract_generated_at: datetime | None
+    created_at: datetime
+    segments: list[ConvoySegmentRead] = []
+    payments: list[ConvoyPaymentRead] = []
+    account: ConvoyAccount | None = None
+    vehicle_documents: list[ChecklistItem] = []
+    departure_id: int | None = None
+    vehicle_label: str | None = None
+    crew_labels: dict[str, str] = {}

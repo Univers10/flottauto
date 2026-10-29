@@ -15,7 +15,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AppShell } from "@/components/layout/app-shell";
+import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
+import { TodoNow } from "@/components/home/todo-now";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, PageHeader, Panel, Plate, StatCard, StatusBadge, toneSurface } from "@/components/app/primitives";
@@ -43,6 +44,16 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 }
 
 export default function DashboardPage() {
+  return (
+    <AppShell>
+      <Dashboard />
+    </AppShell>
+  );
+}
+
+function Dashboard() {
+  const user = useCurrentUser();
+  const greeting = user?.first_name ? `Bonjour ${user.first_name}` : "Accueil";
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -130,10 +141,10 @@ export default function DashboardPage() {
   const openOrders = workOrders.filter((wo) => wo.status !== "done" && wo.status !== "validated").length;
 
   return (
-    <AppShell>
+    <>
       <PageHeader
-        title="Tableau de bord"
-        description="Vue d'ensemble de l'activité de votre flotte."
+        title={greeting}
+        description="Commencez par la liste « À faire maintenant » : chaque ligne mène à l'écran où agir."
         actions={
           <>
             <Button variant="outline" onClick={loadData}>
@@ -148,6 +159,10 @@ export default function DashboardPage() {
         }
       />
 
+      <TodoNow />
+
+      <h2 className="mt-8 mb-3 text-[0.9375rem] font-semibold tracking-tight">Vue d&apos;ensemble de la flotte</h2>
+
       {/* Indicateurs */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {loading ? (
@@ -155,14 +170,14 @@ export default function DashboardPage() {
         ) : (
           <>
             <StatCard
-              label="Véhicules"
+              label="Cars"
               value={totalVehicles}
               hint={`${statusCounts.available} disponible(s) · ${statusCounts.in_maintenance} en maintenance`}
               icon={Car}
               href="/vehicles"
             />
             <StatCard
-              label="Ordres de travail ouverts"
+              label="Réparations en cours"
               value={stats?.open_work_orders ?? openOrders}
               hint={`${workOrders.length} intervention(s) au total`}
               icon={Wrench}
@@ -394,6 +409,6 @@ export default function DashboardPage() {
           </Panel>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }
