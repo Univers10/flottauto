@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -70,14 +71,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 function Logo() {
   return (
     <div className="flex items-center gap-2.5 px-2">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.25)]">
-        <svg viewBox="0 0 24 24" fill="none" className="size-[18px]" aria-hidden>
-          <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-          <path d="M3 15.5h18v3H3z" fill="currentColor" />
-          <circle cx="7.5" cy="18.5" r="1.6" fill="var(--sidebar-primary)" stroke="currentColor" strokeWidth="1.4" />
-          <circle cx="16.5" cy="18.5" r="1.6" fill="var(--sidebar-primary)" stroke="currentColor" strokeWidth="1.4" />
-        </svg>
-      </span>
+      <Image src="/itts-logo.png" alt="ITTS" width={32} height={32} className="size-8 rounded-lg ring-1 ring-sidebar-border" priority />
       <div className="leading-none">
         <span className="block text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">FlottAuto</span>
         <span className="mt-1 block text-[10px] font-medium tracking-[0.12em] text-sidebar-muted uppercase">Contrôle des cars</span>

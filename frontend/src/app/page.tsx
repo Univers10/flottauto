@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowRight, BellRing, Gauge, Loader2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -59,12 +60,7 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-2.5">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <svg viewBox="0 0 24 24" fill="none" className="size-5" aria-hidden>
-              <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-              <path d="M3 15.5h18v3H3z" fill="currentColor" />
-            </svg>
-          </span>
+          <Image src="/itts-logo.png" alt="ITTS" width={40} height={40} className="size-10 rounded-lg ring-1 ring-sidebar-border" priority />
           <span className="text-lg font-semibold tracking-tight text-sidebar-accent-foreground">FlottAuto</span>
         </div>
 
@@ -87,19 +83,14 @@ export default function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative text-xs text-sidebar-muted">© {new Date().getFullYear()} FlottAuto · Gestion de flotte et de transport</p>
+        <p className="relative text-xs text-sidebar-muted">© {new Date().getFullYear()} ITTS-SARL · FlottAuto, contrôle des cars</p>
       </div>
 
       {/* Formulaire */}
       <div className="flex items-center justify-center bg-background px-6 py-12">
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <svg viewBox="0 0 24 24" fill="none" className="size-5" aria-hidden>
-                <path d="M4 15.5 7 9h10l3 6.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-                <path d="M3 15.5h18v3H3z" fill="currentColor" />
-              </svg>
-            </span>
+            <Image src="/itts-logo.png" alt="ITTS" width={36} height={36} className="size-9 rounded-lg" priority />
             <span className="text-lg font-semibold tracking-tight">FlottAuto</span>
           </div>
 
