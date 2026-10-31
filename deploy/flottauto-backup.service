@@ -1,0 +1,7 @@
+[Unit]
+Description=FlottAuto : sauvegarde quotidienne (base + fichiers)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /root/flottauto/deploy/flottauto-backup.sh

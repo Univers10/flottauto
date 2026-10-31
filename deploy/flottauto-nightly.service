@@ -1,0 +1,8 @@
+[Unit]
+Description=FlottAuto : alertes de la nuit (papiers, permis, entretiens, factures absentes)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/flottauto/backend
+ExecStart=/root/flottauto/backend/.venv/bin/python -m app.jobs nightly

@@ -19,7 +19,8 @@ FLOTTAUTO_ADMIN_PASSWORD=... FLOTTAUTO_MANAGER_PASSWORD=... python seed_real_dat
 alembic revision --autogenerate -m "..."           # new migration
 alembic upgrade head
 ```
-There is no `tests/` directory yet, although `pytest` is in requirements.
+Tests: `python -m pytest -q` (from `backend/`; SQLite temp DB, fixtures in `tests/conftest.py`).
+Scheduled jobs: `python -m app.jobs nightly` (alerts for every company). Production timers and the daily backup script live in `deploy/` (see `deploy/README.md`).
 
 Frontend (from `frontend/`):
 ```bash
