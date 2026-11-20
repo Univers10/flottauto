@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app import models
 from app.api.deps import deny_roles
-from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys, reports
+from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys, reports, fines
 
 R = models.Role
 # Maintenanciers : maintenance, alertes et flotte en lecture seule.
@@ -30,6 +30,8 @@ api_router.include_router(needs.router, prefix="/needs", tags=["needs"], depende
 api_router.include_router(departures.router, prefix="/departures", tags=["departures"], dependencies=no_mechanic)
 api_router.include_router(convoys.router, prefix="/convoys", tags=["convoys"], dependencies=no_mechanic)
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"], dependencies=no_field_staff)
+# Contraventions et dette du chauffeur : encadrement et caisse ; le lecteur consulte seulement.
+api_router.include_router(fines.router, prefix="/fines", tags=["fines"], dependencies=no_field_staff + [Depends(deny_roles(R.READER, allow_read=True))])
 # Vérification publique du QR du bon de sortie (portail de la gare, sans connexion).
 api_router.include_router(departures.public_router, prefix="/exit-passes", tags=["exit-passes"])
 # Pont ITTS Gestion : appels signés (HMAC) sans compte, et administration du pont.

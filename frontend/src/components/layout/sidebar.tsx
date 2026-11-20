@@ -13,6 +13,7 @@ import {
   Landmark,
   ListTodo,
   Menu,
+  ReceiptText,
   Route,
   Settings,
   TicketCheck,
@@ -66,6 +67,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/fuel", label: "Carburant", icon: Fuel },
       { href: "/tolls", label: "Péages", icon: Landmark },
+      { href: "/fines", label: "Contraventions", icon: ReceiptText },
     ],
   },
 ];

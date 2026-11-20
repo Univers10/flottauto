@@ -724,3 +724,48 @@ export interface ReportSummary {
   }[];
   deadlines: { vehicle_label: string; document: string; expiry_date: string; days_left: number }[];
 }
+
+// Contraventions et dette du chauffeur
+export type FineStatus = "to_pay" | "paid";
+export type RepaymentMethod = "cash" | "payroll";
+
+export interface Fine {
+  id: number;
+  vehicle_id: number;
+  driver_id: number | null;
+  fine_date: string;
+  place: string | null;
+  reason: string;
+  amount: number;
+  charged_to_driver: boolean;
+  status: FineStatus;
+  paid_on: string | null;
+  photo_url: string | null;
+  notes: string | null;
+  created_at: string;
+  vehicle_label: string | null;
+  driver_name: string | null;
+}
+
+export interface FineBalance {
+  driver_id: number;
+  driver_name: string | null;
+  charged: number;
+  repaid: number;
+  fines: number;
+  balance: number;
+}
+
+export interface FineStatementLine {
+  date: string;
+  kind: "fine" | "repayment";
+  id: number;
+  label: string;
+  detail: string | null;
+  amount: number;
+  balance: number;
+}
+
+export interface FineStatement extends FineBalance {
+  lines: FineStatementLine[];
+}

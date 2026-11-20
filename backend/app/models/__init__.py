@@ -1,4 +1,8 @@
 from app.models.models import (
+    Fine,
+    FineRepayment,
+    FineStatus,
+    RepaymentMethod,
     Role,
     User,
     Company,

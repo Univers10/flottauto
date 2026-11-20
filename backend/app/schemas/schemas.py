@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 from app.models.models import Role, VehicleStatus, VehicleType, EnergyType, WorkOrderType, WorkOrderStatus, AlertType, TollPaymentMethod, FuelType, StaffType
 from app.models.models import ApprovalChannel, ConvoyPurpose, ConvoyStatus, PaymentMethod, ProofKind
 from app.models.models import DepartureStatus, FuelLevel, InspectionKind, InspectionStatus, ItemStatus, NeedOrigin, NeedPriority, NeedStatus, SignatureRole
+from app.models.models import FineStatus, RepaymentMethod
 
 
 # Common
@@ -1133,3 +1134,70 @@ class ConvoyRead(BaseModel):
     departure_id: int | None = None
     vehicle_label: str | None = None
     crew_labels: dict[str, str] = {}
+
+
+# Contraventions et dette du chauffeur
+class FineCreate(BaseModel):
+    vehicle_id: int
+    driver_id: int | None = None
+    fine_date: date
+    place: str | None = Field(None, max_length=255)
+    reason: str = Field(..., min_length=2, max_length=255)
+    amount: int = Field(..., gt=0, le=10_000_000)
+    charged_to_driver: bool = True
+    status: FineStatus = FineStatus.TO_PAY
+    paid_on: date | None = None
+    notes: str | None = None
+
+
+class FineUpdate(BaseModel):
+    vehicle_id: int | None = None
+    driver_id: int | None = None
+    fine_date: date | None = None
+    place: str | None = Field(None, max_length=255)
+    reason: str | None = Field(None, min_length=2, max_length=255)
+    amount: int | None = Field(None, gt=0, le=10_000_000)
+    charged_to_driver: bool | None = None
+    status: FineStatus | None = None
+    paid_on: date | None = None
+    notes: str | None = None
+
+
+class FineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    vehicle_id: int
+    driver_id: int | None
+    fine_date: date
+    place: str | None
+    reason: str
+    amount: int
+    charged_to_driver: bool
+    status: FineStatus
+    paid_on: date | None
+    photo_url: str | None
+    notes: str | None
+    created_at: datetime
+    vehicle_label: str | None = None
+    driver_name: str | None = None
+
+
+class FineRepaymentCreate(BaseModel):
+    driver_id: int
+    amount: int = Field(..., gt=0, le=10_000_000)
+    repayment_date: date
+    method: RepaymentMethod = RepaymentMethod.CASH
+    notes: str | None = None
+
+
+class FineRepaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    driver_id: int
+    amount: int
+    repayment_date: date
+    method: RepaymentMethod
+    notes: str | None
+    created_at: datetime

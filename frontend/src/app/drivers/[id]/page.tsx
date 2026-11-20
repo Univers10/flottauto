@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DetailList, EmptyState, Field, FormSection, PageHeader, Panel, Plate, StatusBadge, toneText } from "@/components/app/primitives";
 import { cn } from "@/lib/utils";
 import {
+  api,
   assetUrl,
   getDriver,
   updateDriver,
@@ -29,9 +30,9 @@ import {
 } from "@/lib/api";
 import { documentTypeLabels, staffTypeLabels, DOCUMENT_ACCEPT } from "@/lib/labels";
 import { canManagePins } from "@/lib/roles";
-import { formatDate, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
+import { formatDate, formatNumber, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
 import { toast } from "sonner";
-import type { Document, Driver, StaffType, Vehicle } from "@/types";
+import type { Document, Driver, FineStatement, StaffType, Vehicle } from "@/types";
 
 /** Types de pièces proposés pour un conducteur (libellés partagés). */
 const driverDocTypes = ["license", "id_card", "medical", "insurance", "other"] as const;
@@ -51,6 +52,44 @@ const PIN_PATTERN = /^\d{4,6}$/;
  * PIN de signature (états des lieux, autorisations de départ).
  * Rendu sous AppShell : useCurrentUser() y est disponible. Le PIN n'est jamais affiché ni conservé.
  */
+/** Contraventions à la charge du chauffeur : ce qu'il doit encore et les dernières écritures. */
+function FinesPanel({ driverId }: { driverId: number }) {
+  const [st, setSt] = useState<FineStatement | null>(null);
+  useEffect(() => {
+    // Rôles sans accès aux contraventions (403) : le panneau ne s'affiche pas.
+    api.get<FineStatement>(`/fines/drivers/${driverId}`).then(setSt).catch(() => setSt(null));
+  }, [driverId]);
+  if (!st || (st.fines === 0 && st.repaid === 0)) return null;
+  return (
+    <Panel title="Contraventions">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm text-muted-foreground">Reste dû</span>
+        <span className={cn("text-xl font-semibold tabular", st.balance > 0 && toneText("warning"))}>{formatNumber(st.balance)} F</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {st.fines} amende(s) · {formatNumber(st.charged)} F à sa charge · {formatNumber(st.repaid)} F remboursés
+      </p>
+      <ul className="mt-3 divide-y text-sm">
+        {st.lines.slice(0, 5).map((l) => (
+          <li key={`${l.kind}-${l.id}`} className="flex items-center justify-between gap-2 py-2">
+            <span className="min-w-0">
+              <span className="block truncate">{l.label}</span>
+              <span className="text-xs text-muted-foreground">{formatDate(l.date)}</span>
+            </span>
+            <span className={cn("shrink-0 tabular", l.amount < 0 ? toneText("success") : "")}>
+              {l.amount < 0 ? "−" : "+"}
+              {formatNumber(Math.abs(l.amount))} F
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Link href="/fines" className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}>
+        Voir les contraventions
+      </Link>
+    </Panel>
+  );
+}
+
 function SignaturePinPanel({ driver, onUpdated }: { driver: Driver; onUpdated: (d: Driver) => void }) {
   const user = useCurrentUser();
   const canManage = user ? canManagePins(user.role) : false;
@@ -786,6 +825,8 @@ export default function DriverProfilePage() {
         </div>
 
         <div className="space-y-6">
+          {driver.staff_type === "driver" ? <FinesPanel driverId={driver.id} /> : null}
+
           <Panel title="Véhicule affecté">
             {vehicle ? (
               <div className="space-y-4">

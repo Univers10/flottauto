@@ -844,3 +844,59 @@ class ConvoyPayment(Base):
         if u is None:
             return None
         return " ".join(x for x in (u.first_name, u.last_name) if x) or u.email
+
+
+# ───────────────────────── Contraventions et dette du chauffeur ─────────────────────────
+
+class FineStatus(str, enum.Enum):
+    TO_PAY = "to_pay"  # à payer aux autorités
+    PAID = "paid"  # payée aux autorités par la compagnie
+
+
+class RepaymentMethod(str, enum.Enum):
+    CASH = "cash"  # versement du chauffeur
+    PAYROLL = "payroll"  # retenue sur salaire
+
+
+class Fine(Base):
+    """Contravention reçue avec un car. La compagnie paie l'amende ; si elle est à la charge du chauffeur,
+    elle s'ajoute à sa dette, qu'il rembourse petit à petit (FineRepayment)."""
+
+    __tablename__ = "fines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True, index=True)
+    fine_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    place: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    charged_to_driver: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    status: Mapped[FineStatus] = mapped_column(Enum(FineStatus), default=FineStatus.TO_PAY, server_default="TO_PAY")
+    paid_on: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    vehicle = relationship("Vehicle")
+    driver = relationship("Driver")
+
+
+class FineRepayment(Base):
+    """Remboursement d'un chauffeur sur ses contraventions (versement ou retenue)."""
+
+    __tablename__ = "fine_repayments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), nullable=False, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    repayment_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    method: Mapped[RepaymentMethod] = mapped_column(Enum(RepaymentMethod), default=RepaymentMethod.CASH, server_default="CASH")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    driver = relationship("Driver")
