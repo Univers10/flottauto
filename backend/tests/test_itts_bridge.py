@@ -395,3 +395,43 @@ def test_snapshot_requires_fleet_and_status_reports_sync(client, auth, company):
     _post_event(client, _snapshot([{"id": "bus-530", "plate": "ITTS-530", "number": "530"}], FLEET_STATIONS))
     status = client.get("/api/v1/integrations/itts/status", headers=auth(R.ADMIN)).json()
     assert status["synced"] == {"vehicles": 1, "stations": 2, "staff": 0} and status["last_snapshot_at"]
+
+
+def _rental(deposit=200000, method="wave", **extra):
+    dep = datetime.now(timezone.utc) + timedelta(days=10)
+    rental = {
+        "id": "rent-1", "number": "LOC-2026-001",
+        "client": {"name": "Paroisse Saint-Paul", "phone": "+2250707070707"},
+        "purpose": "pilgrimage", "from": "Abidjan", "to": "Yamoussoukro",
+        "departure_at": dep.isoformat(), "return_date": (dep + timedelta(days=2)).date().isoformat(),
+        "seats": 60, "price_per_seat": 8000, "deposit": deposit, "deposit_method": method, "notes": "Départ devant l'église",
+        "station": {"id": "st-abo", "code": "ABO", "name": "Abidjan-Abobo"},
+        "requested_by": {"id": "agt-1", "name": "Awa Guichet"},
+        **extra,
+    }
+    return {"id": str(uuid.uuid4()), "type": "rental.requested", "occurred_at": datetime.now(timezone.utc).isoformat(), "rental": rental}
+
+
+def test_rental_request_becomes_a_draft_convoy_with_its_deposit(client, db, auth, company):
+    event = _rental()
+    r = _post_event(client, event)
+    assert r.status_code == 200 and r.json()["status"] == "processed", r.text
+    # Sent twice (network): one convoy only.
+    assert _post_event(client, event).json()["status"] == "duplicate"
+    convoys = db.query(models.Convoy).all()
+    assert len(convoys) == 1
+    cv = convoys[0]
+    assert cv.status == models.ConvoyStatus.DRAFT and cv.client_name == "Paroisse Saint-Paul" and cv.seats_sold == 60
+    assert cv.purpose == models.ConvoyPurpose.PILGRIMAGE and "LOC-2026-001" in cv.notes and "Awa Guichet" in cv.notes
+    assert [(s.from_label, s.to_label, s.price_per_seat) for s in cv.segments] == [("Abidjan", "Yamoussoukro", 8000)]
+    assert [(p.amount, p.method) for p in cv.payments] == [(200000, models.PaymentMethod.WAVE)]
+
+    admin = auth(R.ADMIN)
+    detail = client.get(f"/api/v1/convoys/{cv.id}", headers=admin).json()
+    assert detail["account"]["paid"] == 200000 and detail["account"]["revenue"] >= 480000
+
+
+def test_rental_request_without_body_is_rejected(client, company):
+    event = _rental()
+    del event["rental"]
+    assert _post_event(client, event).status_code == 422

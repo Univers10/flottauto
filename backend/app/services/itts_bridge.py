@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import crud, models, schemas
 from app.core.config import get_settings
 from app.services import departures as dep_svc
 
@@ -303,9 +303,49 @@ def _infraction_alert(db: Session, dep: models.Departure) -> None:
     )
 
 
+def _apply_rental(db: Session, cid: int, event: schemas.IttsEvent) -> str:
+    """Demande de location ITTS → convoi brouillon (le gestionnaire choisit ensuite car, équipage, km, contrat)."""
+    from app.services import convoys as convoy_svc
+
+    r = event.rental
+    station = _station(db, cid, r.station) if r.station else None
+    settings = crud.get_company_settings(db, cid)
+    departure_at = _utc_naive(r.departure_at)
+    who = f" par {r.requested_by.name}" if r.requested_by else ""
+    where = f" ({r.station.name})" if r.station else ""
+    notes = f"Demande ITTS {r.number}, saisie{who}{where}."
+    if r.notes:
+        notes += "\n" + r.notes
+    convoy = models.Convoy(
+        company_id=cid,
+        number=convoy_svc._next_number(db, cid, settings.convoy_number_prefix or "CV", departure_at.year),
+        status=models.ConvoyStatus.DRAFT,
+        title=f"{r.client.name} · {r.to}"[:255],
+        purpose=r.purpose,
+        client_name=r.client.name,
+        client_phone=r.client.phone,
+        departure_at=departure_at,
+        return_date=r.return_date,
+        meeting_point=r.from_,
+        station_id=station.id if station else None,
+        seats_sold=r.seats,
+        notes=notes,
+    )
+    convoy.segments = [models.ConvoySegment(position=1, from_label=r.from_, to_label=r.to, km=0, price_per_seat=r.price_per_seat)]
+    if r.deposit > 0:
+        convoy.payments.append(models.ConvoyPayment(
+            amount=r.deposit, method=r.deposit_method or models.PaymentMethod.CASH,
+            reference=f"Acompte ITTS {r.number}"[:100], paid_at=_utc_naive(event.occurred_at)))
+    db.add(convoy)
+    db.flush()
+    return "processed"
+
+
 def _apply(db: Session, cid: int, event: schemas.IttsEvent) -> str:
     if event.type == "fleet.snapshot":
         return _apply_fleet(db, cid, event)
+    if event.type == "rental.requested":
+        return _apply_rental(db, cid, event)
     d = event.departure
     if event.type == "departure.upserted":
         latest = _latest_processed_at(db, cid, d.id, exclude_id=event.id)

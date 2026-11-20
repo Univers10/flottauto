@@ -976,17 +976,48 @@ class IttsFleet(BaseModel):
     staff: list[IttsFleetStaff] = Field(default_factory=list, max_length=2000)
 
 
+class IttsRentalClient(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    phone: str = Field(..., min_length=1, max_length=50)
+
+
+class IttsRental(IttsRef):
+    """Demande de location saisie en gare dans ITTS Gestion : devient un convoi brouillon."""
+
+    number: str = Field(..., min_length=1, max_length=40)
+    client: IttsRentalClient
+    purpose: ConvoyPurpose = ConvoyPurpose.OTHER
+    from_: str = Field(..., alias="from", min_length=1, max_length=120)
+    to: str = Field(..., min_length=1, max_length=120)
+    departure_at: datetime
+    return_date: date
+    seats: int = Field(..., ge=1, le=120)
+    price_per_seat: int = Field(..., ge=0, le=10_000_000)
+    deposit: int = Field(0, ge=0, le=1_000_000_000)
+    deposit_method: PaymentMethod | None = None
+    notes: str | None = Field(None, max_length=500)
+    station: IttsStation | None = None
+    requested_by: IttsPerson | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class IttsEvent(BaseModel):
     id: str = Field(..., min_length=1, max_length=64)
-    type: Literal["departure.upserted", "departure.cancelled", "departure.departed", "fleet.snapshot"]
+    type: Literal["departure.upserted", "departure.cancelled", "departure.departed", "fleet.snapshot", "rental.requested"]
     occurred_at: datetime
     departure: IttsDeparture | None = None
     fleet: IttsFleet | None = None
+    rental: IttsRental | None = None
 
     @model_validator(mode="after")
     def _body_matches_type(self):
         if self.type == "fleet.snapshot" and self.fleet is None:
             raise ValueError("fleet requis pour fleet.snapshot")
+        if self.type == "rental.requested":
+            if self.rental is None:
+                raise ValueError("rental requis pour rental.requested")
+            return self
         if self.type != "fleet.snapshot" and self.departure is None:
             raise ValueError("departure requis pour un événement de départ")
         return self
