@@ -19,8 +19,7 @@ import {
   TicketCheck,
   UserRound,
   Users,
-  Wrench,
-} from "lucide-react";
+  Wrench, MapPinned } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { canAccess, roleLabels, rolesOf } from "@/lib/roles";
@@ -53,6 +52,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/drivers", label: "Chauffeurs", icon: Users },
       { href: "/conveyors", label: "Convoyeurs", icon: UserRound },
       { href: "/inspections", label: "États des lieux", icon: ClipboardCheck },
+      { href: "/tracking", label: "Suivi GPS", icon: MapPinned },
     ],
   },
   {

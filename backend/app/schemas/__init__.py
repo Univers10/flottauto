@@ -1,4 +1,8 @@
 from app.schemas.schemas import (
+    GpsPoint,
+    GpsIngest,
+    GpsDeviceCreate,
+    GpsDeviceUpdate,
     FineCreate,
     FineUpdate,
     FineRead,

@@ -1253,3 +1253,39 @@ class FineRepaymentRead(BaseModel):
     method: RepaymentMethod
     notes: str | None
     created_at: datetime
+
+
+# ───────────────────────── Suivi GPS (F6) ─────────────────────────
+
+class GpsPoint(BaseModel):
+    recorded_at: datetime
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    speed_kmh: float | None = Field(None, ge=0, le=400)
+    heading: int | None = Field(None, ge=0, le=360)
+    odometer_km: float | None = Field(None, ge=0, le=10_000_000)
+    ignition: bool | None = None
+    fuel_level_pct: float | None = Field(None, ge=0, le=100)
+    fuel_used_l: float | None = Field(None, ge=0, le=10_000_000)
+
+
+class GpsIngest(BaseModel):
+    """Lot de positions d'un boîtier (un boîtier sans réseau les envoie au retour du réseau)."""
+
+    positions: list[GpsPoint] = Field(..., min_length=1, max_length=500)
+
+
+class GpsDeviceCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    vehicle_id: int
+    imei: str | None = Field(None, min_length=5, max_length=32, pattern=r"^[0-9A-Za-z-]+$")
+    model: str | None = Field(None, max_length=100)
+
+
+class GpsDeviceUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    imei: str | None = Field(None, min_length=5, max_length=32, pattern=r"^[0-9A-Za-z-]+$")
+    model: str | None = Field(None, max_length=100)
+    active: bool | None = None

@@ -1,4 +1,6 @@
 from app.models.models import (
+    GpsDevice,
+    GpsPosition,
     Fine,
     FineRepayment,
     FineStatus,

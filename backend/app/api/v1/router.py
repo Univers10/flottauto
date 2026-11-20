@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app import models
 from app.api.deps import deny_roles
-from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys, reports, fines
+from app.api.v1 import auth, vehicles, drivers, maintenance, dashboard, alerts, tolls, fuel, stations, settings, inspections, needs, departures, integrations, convoys, reports, fines, gps
 
 R = models.Role
 # Maintenanciers : maintenance, alertes et flotte en lecture seule.
@@ -36,3 +36,6 @@ api_router.include_router(fines.router, prefix="/fines", tags=["fines"], depende
 api_router.include_router(departures.public_router, prefix="/exit-passes", tags=["exit-passes"])
 # Pont ITTS Gestion : appels signés (HMAC) sans compte, et administration du pont.
 api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
+# Suivi GPS : écrans (comptes) et réception des positions (clé du boîtier ou du relais, sans compte).
+api_router.include_router(gps.router, prefix="/gps", tags=["gps"], dependencies=no_field_staff)
+api_router.include_router(gps.ingest_router, prefix="/gps", tags=["gps-ingest"])

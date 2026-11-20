@@ -12,6 +12,8 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Enum,
+    Float,
+    Index,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -212,6 +214,8 @@ class CompanySettings(Base):
     broker_commission_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=5)
     line_revenue_per_bus_day: Mapped[int] = mapped_column(Integer, default=147342)
     immobilization_daily_rate: Mapped[int] = mapped_column(Integer, default=100000)
+    # Clé du serveur relais GPS (Traccar) : seule son empreinte est gardée.
+    gps_relay_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     document_warning_days: Mapped[int] = mapped_column(Integer, default=30)
     oil_change_warning_km: Mapped[int] = mapped_column(Integer, default=2000)
     convoy_consumption_l_100km: Mapped[int] = mapped_column(Integer, default=33, server_default="33")
@@ -928,3 +932,50 @@ class FineRepayment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     driver = relationship("Driver")
+
+
+# ───────────────────────── Suivi GPS (F6) ─────────────────────────
+
+class GpsDevice(Base):
+    """Boîtier GPS posé sur un car (ou téléphone de test). Il envoie ses positions avec sa clé, ou passe
+    par le serveur relais (Traccar) qui l'identifie par son IMEI."""
+
+    __tablename__ = "gps_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False, unique=True)
+    imei: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Empreinte (sha256) de la clé du boîtier ; la clé n'est montrée qu'une fois.
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+    vehicle = relationship("Vehicle")
+
+
+class GpsPosition(Base):
+    """Position reçue d'un boîtier (heure UTC du boîtier)."""
+
+    __tablename__ = "gps_positions"
+    __table_args__ = (
+        UniqueConstraint("device_id", "recorded_at", name="uq_gps_positions_device_time"),
+        Index("ix_gps_positions_vehicle_time", "vehicle_id", "recorded_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"), nullable=False)
+    device_id: Mapped[int] = mapped_column(ForeignKey("gps_devices.id", ondelete="CASCADE"), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lng: Mapped[float] = mapped_column(Float, nullable=False)
+    speed_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    heading: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    odometer_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ignition: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    fuel_level_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fuel_used_l: Mapped[float | None] = mapped_column(Float, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

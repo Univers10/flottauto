@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { ApprovalChannel, Intervention, ReportSummary, ProofKind, WorkOrderLineInput, Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
+/** Adresse publique de l'API (instructions des boîtiers GPS). */
+export const apiBaseUrl = API_URL;
 
 /** URL absolue d'un fichier servi par le backend (/uploads/...). */
 export function assetUrl(path: string | null | undefined): string | null {
@@ -78,6 +80,11 @@ export const api = {
   put: <T>(path: string, body: unknown) =>
     request<T>(path, {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
   delete: <T = unknown>(path: string) => request<T>(path, { method: "DELETE" }),
