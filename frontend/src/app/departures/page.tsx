@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, PageHeader, Panel, Plate, SegmentButton, StatCard, StatusBadge, toneText } from "@/components/app/primitives";
 import { createInspection, issueExitPass, listDepartures, listVehicles, markDeparted } from "@/lib/api";
 import { checklistItemTone, departureLight, departureStatus, type Tone } from "@/lib/labels";
-import { canRunInspections } from "@/lib/roles";
+import { canRunInspections, rolesOf } from "@/lib/roles";
 import { fullName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Departure, DepartureLight, Vehicle } from "@/types";
@@ -75,7 +75,7 @@ export default function DeparturesPage() {
 
 function DeparturesBoard() {
   const user = useCurrentUser();
-  const canEdit = !!user && canRunInspections(user.role);
+  const canEdit = !!user && canRunInspections(rolesOf(user));
   const [day, setDay] = useState(todayIso);
   const [rows, setRows] = useState<Departure[]>([]);
   const [vehicles, setVehicles] = useState<Record<number, Vehicle>>({});

@@ -16,6 +16,9 @@ export interface User {
   first_name: string | null;
   last_name: string | null;
   role: Role;
+  /** Rôles en plus du rôle principal : les droits sont l'union des rôles. */
+  extra_roles?: Role[];
+  roles?: Role[];
   is_active: boolean;
   company_id: number | null;
   station_id: number | null;

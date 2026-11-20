@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { EmptyState, Field, PageHeader, Panel, Plate, SegmentButton, StatCard, StatusBadge, Toolbar } from "@/components/app/primitives";
 import { createNeed, createWorkOrderFromNeed, listNeeds, listVehicles, updateNeed } from "@/lib/api";
 import { needOriginLabels, needPriority, needStatus } from "@/lib/labels";
-import { canRunInspections, canValidateNeeds } from "@/lib/roles";
+import { canRunInspections, canValidateNeeds, rolesOf } from "@/lib/roles";
 import { formatMoney } from "@/lib/format";
 import type { NeedPriority, NeedStatus, Vehicle, VehicleNeed } from "@/types";
 import { toast } from "sonner";
@@ -62,8 +62,8 @@ function NeedsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const user = useCurrentUser();
-  const canWrite = user ? canRunInspections(user.role) : false;
-  const canValidate = user ? canValidateNeeds(user.role) : false;
+  const canWrite = user ? canRunInspections(rolesOf(user)) : false;
+  const canValidate = user ? canValidateNeeds(rolesOf(user)) : false;
 
   const [needs, setNeeds] = useState<VehicleNeed[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);

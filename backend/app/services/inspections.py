@@ -39,7 +39,8 @@ def _naive(value: datetime | None) -> datetime | None:
 
 def _station_scope(user: models.User | None) -> int | None:
     """Gare imposée : un chef de gare rattaché à une gare ne voit que les états des lieux de sa gare."""
-    if user is not None and user.role == R.STATION_MANAGER and user.station_id is not None:
+    # Un autre rôle en plus (superviseur…) élargit la vue : seule la gare du chef de gare « pur » est imposée.
+    if user is not None and user.roles == [R.STATION_MANAGER] and user.station_id is not None:
         return user.station_id
     return None
 

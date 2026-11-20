@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EmptyState, PageHeader, Panel, SegmentButton, StatusBadge, Toolbar, toneText } from "@/components/app/primitives";
 import { createConvoy, listConvoys } from "@/lib/api";
 import { convoyPurposeLabels, convoyStatus, convoyVerdictTone } from "@/lib/labels";
-import { canManageConvoys } from "@/lib/roles";
+import { canManageConvoys, rolesOf } from "@/lib/roles";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Convoy, ConvoyStatus } from "@/types";
@@ -44,7 +44,7 @@ export default function ConvoysPage() {
 function ConvoyList() {
   const router = useRouter();
   const user = useCurrentUser();
-  const canEdit = !!user && canManageConvoys(user.role);
+  const canEdit = !!user && canManageConvoys(rolesOf(user));
   const [rows, setRows] = useState<Convoy[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);

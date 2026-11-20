@@ -27,7 +27,7 @@ import {
 } from "@/lib/api";
 import { paymentMethodLabels, workOrderType, type Tone } from "@/lib/labels";
 import { formatNumber } from "@/lib/format";
-import { canApproveExpenses, canCloseInterventions, canDeleteWorkOrders } from "@/lib/roles";
+import { canApproveExpenses, canCloseInterventions, canDeleteWorkOrders, rolesOf } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { ExpenseStatus, Intervention, PaymentMethod, ProofKind, WorkOrder, WorkOrderLineInput } from "@/types";
 
@@ -177,7 +177,7 @@ function InterventionView({ iv, onChange }: { iv: Intervention; onChange: (iv: I
               <FileDown className="size-4" />
               Exporter PDF
             </Link>
-            {user && canDeleteWorkOrders(user.role) && !locked && (
+            {user && canDeleteWorkOrders(rolesOf(user)) && !locked && (
               <Button variant="ghost" onClick={remove} aria-label="Supprimer l'intervention">
                 <Trash2 className="size-4" />
               </Button>
@@ -210,7 +210,7 @@ function InterventionView({ iv, onChange }: { iv: Intervention; onChange: (iv: I
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 space-y-6 xl:col-span-2">
           {!locked && iv.next_action && user && (
-            <NextAction iv={iv} busy={busy || linesDirty} linesDirty={linesDirty} run={run} canApprove={canApproveExpenses(user.role)} canClose={canCloseInterventions(user.role)} />
+            <NextAction iv={iv} busy={busy || linesDirty} linesDirty={linesDirty} run={run} canApprove={canApproveExpenses(rolesOf(user))} canClose={canCloseInterventions(rolesOf(user))} />
           )}
           <DetailsPanel iv={iv} locked={locked} onChange={onChange} />
           <LinesPanel iv={iv} locked={locked || iv.invoice_submitted_at !== null} onChange={onChange} onDirtyChange={setLinesDirty} />

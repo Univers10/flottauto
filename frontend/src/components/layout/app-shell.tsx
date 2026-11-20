@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { api } from "@/lib/api";
-import { canAccess, homePathFor } from "@/lib/roles";
+import { canAccess, homePathFor, rolesOf } from "@/lib/roles";
 import type { User } from "@/types";
 
 const CurrentUserContext = createContext<User | null>(null);
@@ -31,10 +31,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, [router]);
 
-  const allowed = user ? canAccess(user.role, pathname) : false;
+  const allowed = user ? canAccess(rolesOf(user), pathname) : false;
 
   useEffect(() => {
-    if (user && !allowed) router.replace(homePathFor(user.role));
+    if (user && !allowed) router.replace(homePathFor(rolesOf(user)));
   }, [user, allowed, router]);
 
   if (loading || (user && !allowed)) {

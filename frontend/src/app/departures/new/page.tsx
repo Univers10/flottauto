@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, Field, FormSection, PageHeader, Panel } from "@/components/app/primitives";
 import { api, createDeparture, listVehicles } from "@/lib/api";
-import { canRunInspections } from "@/lib/roles";
+import { canRunInspections, rolesOf } from "@/lib/roles";
 import { fullName } from "@/lib/format";
 import type { Driver, Vehicle } from "@/types";
 import { toast } from "sonner";
@@ -53,7 +53,7 @@ function NewDepartureForm() {
       .catch(() => toast.error("Erreur de chargement des convoyeurs"));
   }, []);
 
-  if (user && !canRunInspections(user.role)) {
+  if (user && !canRunInspections(rolesOf(user))) {
     return (
       <Panel>
         <EmptyState

@@ -110,7 +110,7 @@ def create_need(db: Session, company_id: int, user: models.User, payload: schema
 def update_need(db: Session, need: models.VehicleNeed, payload: schemas.VehicleNeedUpdate, user: models.User) -> models.VehicleNeed:
     data = payload.model_dump(exclude_unset=True)
     new_status = data.pop("status", None)
-    is_validator = user.role in VALIDATORS
+    is_validator = user.has_role(*VALIDATORS)
 
     if new_status == NeedStatus.VALIDATED and not is_validator:
         raise HTTPException(status_code=403, detail="Seul le superviseur des opérations valide une dépense")

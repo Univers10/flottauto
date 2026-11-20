@@ -1,4 +1,14 @@
-import type { Role } from "@/types";
+import type { Role, User } from "@/types";
+
+/** Un rôle, ou tous les rôles d'un utilisateur (rôle principal + rôles en plus). */
+export type Who = Role | Role[] | null | undefined;
+
+const rolesList = (who: Who): Role[] => (who == null ? [] : Array.isArray(who) ? who : [who]);
+
+/** Tous les rôles de l'utilisateur : ses droits sont l'union de ses rôles. */
+export function rolesOf(user: Pick<User, "role"> & { roles?: Role[] | null }): Role[] {
+  return user.roles && user.roles.length > 0 ? user.roles : [user.role];
+}
 
 export const roleLabels: Record<Role, string> = {
   super_admin: "Super administrateur",
@@ -20,62 +30,86 @@ const restrictedSections: Partial<Record<Role, string[]>> = {
   conveyor: ["/settings"],
 };
 
-export function canAccess(role: Role, pathname: string): boolean {
-  const sections = restrictedSections[role];
-  if (!sections) return true;
-  return sections.some((section) => pathname === section || pathname.startsWith(`${section}/`));
+export function canAccess(who: Who, pathname: string): boolean {
+  return rolesList(who).some((role) => {
+    const sections = restrictedSections[role];
+    if (!sections) return true;
+    return sections.some((section) => pathname === section || pathname.startsWith(`${section}/`));
+  });
 }
 
-export function homePathFor(role: Role): string {
-  if (role === "mechanic") return "/maintenance";
-  if (role === "conveyor") return "/settings";
-  return "/dashboard";
+export function homePathFor(who: Who): string {
+  // Un rôle sans restriction (gestionnaire…) ouvre l'accueil ; sinon la page du rôle restreint.
+  const list = rolesList(who);
+  if (list.some((r) => r !== "mechanic" && r !== "conveyor")) return "/dashboard";
+  if (list.includes("mechanic")) return "/maintenance";
+  return "/settings";
 }
 
-export function canManageUsers(role: Role): boolean {
-  return role === "admin" || role === "super_admin";
+export function canManageUsers(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return role === "admin" || role === "super_admin";
+  });
 }
 
 /** Gares et valeurs de calcul de l'exploitation. */
-export function canEditOperationsSettings(role: Role): boolean {
-  return role === "admin" || role === "super_admin" || role === "operations_supervisor";
+export function canEditOperationsSettings(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return role === "admin" || role === "super_admin" || role === "operations_supervisor";
+  });
 }
 
 /** Définir le PIN de signature d'un chauffeur ou d'un convoyeur. */
-export function canManagePins(role: Role): boolean {
-  return canEditOperationsSettings(role) || role === "station_manager";
+export function canManagePins(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return canEditOperationsSettings(role) || role === "station_manager";
+  });
 }
 
-export function canDeleteWorkOrders(role: Role): boolean {
-  return role === "admin" || role === "super_admin" || role === "manager" || role === "operations_supervisor";
+export function canDeleteWorkOrders(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return role === "admin" || role === "super_admin" || role === "manager" || role === "operations_supervisor";
+  });
 }
 
 /** Tenir et signer les états des lieux, gérer la liste des besoins. */
-export function canRunInspections(role: Role): boolean {
-  return ["super_admin", "admin", "manager", "station_manager", "operations_supervisor"].includes(role);
+export function canRunInspections(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return ["super_admin", "admin", "manager", "station_manager", "operations_supervisor"].includes(role);
+  });
 }
 
 /** Valider une dépense (un besoin) : le superviseur des opérations, ou un administrateur. */
-export function canValidateNeeds(role: Role): boolean {
-  return role === "admin" || role === "super_admin" || role === "operations_supervisor";
+export function canValidateNeeds(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return role === "admin" || role === "super_admin" || role === "operations_supervisor";
+  });
 }
 
 /** Créer, chiffrer et valider un convoi (contrat). */
-export function canManageConvoys(role: Role): boolean {
-  return ["super_admin", "admin", "manager", "operations_supervisor"].includes(role);
+export function canManageConvoys(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return ["super_admin", "admin", "manager", "operations_supervisor"].includes(role);
+  });
 }
 
 /** Encaisser un paiement de convoi (acompte, solde). */
-export function canCollectConvoyPayments(role: Role): boolean {
-  return canManageConvoys(role) || role === "accountant" || role === "station_manager";
+export function canCollectConvoyPayments(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return canManageConvoys(role) || role === "accountant" || role === "station_manager";
+  });
 }
 
 /** Valider un devis d'intervention dans FlottAuto (le superviseur). */
-export function canApproveExpenses(role: Role): boolean {
-  return ["super_admin", "admin", "operations_supervisor"].includes(role);
+export function canApproveExpenses(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return ["super_admin", "admin", "operations_supervisor"].includes(role);
+  });
 }
 
 /** Clôturer une intervention (chef de gare et hiérarchie). */
-export function canCloseInterventions(role: Role): boolean {
-  return canApproveExpenses(role) || role === "manager" || role === "station_manager";
+export function canCloseInterventions(who: Who): boolean {
+  return rolesList(who).some((role) => {
+    return canApproveExpenses(role) || role === "manager" || role === "station_manager";
+  });
 }

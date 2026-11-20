@@ -466,12 +466,12 @@ def approve(db: Session, wo: models.WorkOrder, user: models.User, payload: schem
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Ajoutez les lignes du devis avant la validation")
     if payload.channel == Channel.IN_APP:
-        if user.role not in APPROVERS:
+        if not user.has_role(*APPROVERS):
             raise HTTPException(status_code=403, detail="Seul le superviseur valide une dépense dans FlottAuto")
         wo.approver_name = None
     else:
         # Validation reçue par WhatsApp : enregistrée par l'agent, avec le nom du superviseur et la capture.
-        if user.role not in WHATSAPP_RECORDERS:
+        if not user.has_role(*WHATSAPP_RECORDERS):
             raise HTTPException(status_code=403, detail="Seuls le chef de gare et l'encadrement enregistrent une validation WhatsApp")
         if not (payload.approver_name or "").strip():
             raise HTTPException(status_code=400, detail="Indiquez le nom du superviseur qui a validé sur WhatsApp")

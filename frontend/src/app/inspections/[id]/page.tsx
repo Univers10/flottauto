@@ -55,7 +55,7 @@ import {
   signatureRoleLabels,
   type Tone,
 } from "@/lib/labels";
-import { canRunInspections } from "@/lib/roles";
+import { canRunInspections, rolesOf } from "@/lib/roles";
 import { formatDate, formatMoney, formatNumber, fullName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -226,7 +226,7 @@ function InspectionDetail({ id }: { id: number }) {
 
   const insp = inspection;
   const isDeparture = insp.kind === "departure";
-  const canEdit = !!user && canRunInspections(user.role);
+  const canEdit = !!user && canRunInspections(rolesOf(user));
   const readOnly = insp.status === "validated" || !canEdit;
   const registration = vehicle?.registration ?? `#${insp.vehicle_id}`;
   const signedCount = SIGNATURE_ROLES.filter((r) => insp.signatures.some((s) => s.role === r)).length;

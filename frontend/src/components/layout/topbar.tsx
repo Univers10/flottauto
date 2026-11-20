@@ -17,7 +17,7 @@ import { MobileSidebar } from "./sidebar";
 import { alertSeverity } from "@/lib/labels";
 import { toneSurface } from "@/components/app/primitives";
 import { fullName, initials } from "@/lib/format";
-import { roleLabels } from "@/lib/roles";
+import { roleLabels, rolesOf } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { AlertItem, User } from "@/types";
 import { toast } from "sonner";
@@ -35,7 +35,7 @@ export function Topbar({ user }: { user: User }) {
   async function loadAlerts() {
     try {
       // La régénération des alertes passe par le dashboard, inaccessible aux maintenanciers.
-      if (user.role !== "mechanic") await refreshAlerts();
+      if (rolesOf(user).some((r) => r !== "mechanic")) await refreshAlerts();
       const res = await listAlerts(true);
       setAlerts(res);
     } catch {

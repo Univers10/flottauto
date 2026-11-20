@@ -26,7 +26,7 @@ import {
   updateConvoy,
 } from "@/lib/api";
 import { checklistItemTone, convoyPurposeLabels, convoyStatus, convoyVerdictTone, paymentMethodLabels } from "@/lib/labels";
-import { canCollectConvoyPayments, canManageConvoys } from "@/lib/roles";
+import { canCollectConvoyPayments, canManageConvoys, rolesOf } from "@/lib/roles";
 import { formatDate, formatNumber, fullName } from "@/lib/format";
 import { vehicleFullName } from "@/lib/vehicle";
 import { cn } from "@/lib/utils";
@@ -234,7 +234,7 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
 
   /** Enregistrement automatique, 700 ms après la dernière frappe. */
   function change(patch: Partial<Form>) {
-    if (!form || !convoy || !user || !canManageConvoys(user.role) || convoy.status === "done" || convoy.status === "cancelled") return;
+    if (!form || !convoy || !user || !canManageConvoys(rolesOf(user)) || convoy.status === "done" || convoy.status === "cancelled") return;
     const next = { ...form, ...patch };
     setForm(next);
     pending.current = next;
@@ -283,8 +283,8 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
   const a = convoy.account!;
   const st = convoyStatus[convoy.status];
   const closed = convoy.status === "done" || convoy.status === "cancelled";
-  const canEdit = !!user && canManageConvoys(user.role) && !closed;
-  const canPay = !!user && canCollectConvoyPayments(user.role) && convoy.status !== "cancelled";
+  const canEdit = !!user && canManageConvoys(rolesOf(user)) && !closed;
+  const canPay = !!user && canCollectConvoyPayments(rolesOf(user)) && convoy.status !== "cancelled";
   const drivers = people.filter((p) => p.staff_type === "driver" && (p.is_active || [convoy.driver_id, convoy.relief_driver_id].includes(p.id)));
   const conveyors = people.filter((p) => p.staff_type === "conveyor" && (p.is_active || p.id === convoy.conveyor_id));
   const seatsOf = vehicles.find((v) => String(v.id) === form.vehicle_id)?.seats;
@@ -652,7 +652,7 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
           <PaymentPanel
             convoy={convoy}
             canPay={canPay}
-            canDelete={!!user && canManageConvoys(user.role)}
+            canDelete={!!user && canManageConvoys(rolesOf(user))}
             agentName={user ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email : null}
             onChange={(next) => setConvoy(next)}
           />

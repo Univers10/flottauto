@@ -103,7 +103,10 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
     if models.Role.SUPER_ADMIN in (payload.role, user.role) and current_user.role != models.Role.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Not allowed")
-    if user.id == current_user.id and (payload.is_active is False or payload.role not in (None, current_user.role)):
+    own_roles_changed = payload.role not in (None, current_user.role) or (
+        payload.extra_roles is not None and set(payload.extra_roles) - {current_user.role} != set(current_user.extra_roles)
+    )
+    if user.id == current_user.id and (payload.is_active is False or own_roles_changed):
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas désactiver ou rétrograder votre propre compte")
     if "station_id" in payload.model_fields_set:
         _check_station(db, payload.station_id, current_user.company_id)

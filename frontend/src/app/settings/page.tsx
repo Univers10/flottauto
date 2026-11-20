@@ -34,7 +34,7 @@ import {
   updateStation,
   updateUser,
 } from "@/lib/api";
-import { canEditOperationsSettings, canManageUsers, roleLabels } from "@/lib/roles";
+import { canEditOperationsSettings, canManageUsers, roleLabels, rolesOf } from "@/lib/roles";
 import { formatDate, fullName, initials } from "@/lib/format";
 import { IttsIntegration } from "@/components/settings/itts-integration";
 import { toast } from "sonner";
@@ -59,6 +59,7 @@ const emptyForm = {
   last_name: "",
   password: "",
   role: "mechanic" as Role,
+  extra_roles: [] as Role[],
   station_id: "",
 };
 
@@ -156,11 +157,11 @@ export default function SettingsPage() {
 // Rendu sous AppShell pour accéder à l'utilisateur connecté.
 function SettingsContent() {
   const currentUser = useCurrentUser();
-  const role = currentUser?.role;
-  const isAdmin = !!role && canManageUsers(role);
-  const canEditOps = !!role && canEditOperationsSettings(role);
-  const showStations = !!role && role !== "mechanic" && role !== "conveyor";
-  const showCalcs = canEditOps || role === "station_manager";
+  const myRoles = currentUser ? rolesOf(currentUser) : [];
+  const isAdmin = canManageUsers(myRoles);
+  const canEditOps = canEditOperationsSettings(myRoles);
+  const showStations = myRoles.some((r) => r !== "mechanic" && r !== "conveyor");
+  const showCalcs = canEditOps || myRoles.includes("station_manager");
   const needStations = isAdmin || showStations;
 
   const [stations, setStations] = useState<Station[]>([]);
@@ -261,7 +262,21 @@ function UserManagement({ currentUserId, stations }: { currentUserId: number; st
 
   const stationNames = useMemo(() => new Map(stations.map((st) => [st.id, st.name])), [stations]);
   const activeStations = useMemo(() => stations.filter((st) => st.active), [stations]);
-  const needsStation = form.role === "station_manager";
+  const needsStation = form.role === "station_manager" || form.extra_roles.includes("station_manager");
+  const [rolesFor, setRolesFor] = useState<User | null>(null);
+  const [editRoles, setEditRoles] = useState<Role[]>([]);
+
+  async function saveRoles() {
+    if (!rolesFor) return;
+    try {
+      const updated = await updateUser(rolesFor.id, { extra_roles: editRoles });
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      toast.success("Rôles mis à jour");
+      setRolesFor(null);
+    } catch (err) {
+      toast.error((err as Error).message || "Erreur lors de la mise à jour");
+    }
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -423,9 +438,16 @@ function UserManagement({ currentUserId, stations }: { currentUserId: number; st
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={user.role === "mechanic" ? "warning" : "neutral"}>
-                        {roleLabels[user.role] ?? user.role}
-                      </Badge>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={user.role === "mechanic" ? "warning" : "neutral"}>
+                          {roleLabels[user.role] ?? user.role}
+                        </Badge>
+                        {(user.extra_roles ?? []).map((r) => (
+                          <Badge key={r} variant="outline">
+                            + {roleLabels[r] ?? r}
+                          </Badge>
+                        ))}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground lg:table-cell">
                       {user.station_id ? (stationNames.get(user.station_id) ?? "—") : "—"}
@@ -440,6 +462,20 @@ function UserManagement({ currentUserId, stations }: { currentUserId: number; st
                     </TableCell>
                     <TableCell className="text-right">
                       {!isSelf && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mr-1"
+                          onClick={() => {
+                            setEditRoles(user.extra_roles ?? []);
+                            setRolesFor(user);
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                          Rôles
+                        </Button>
+                      )}
+                      {!isSelf && (
                         <Button variant="outline" size="sm" onClick={() => toggleActive(user)}>
                           <Power className="size-3.5" />
                           {user.is_active ? "Désactiver" : "Réactiver"}
@@ -453,6 +489,24 @@ function UserManagement({ currentUserId, stations }: { currentUserId: number; st
           </Table>
         )}
       </Panel>
+
+      <Dialog open={rolesFor !== null} onOpenChange={(o) => !o && setRolesFor(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rôles de {rolesFor ? fullName(rolesFor) : ""}</DialogTitle>
+            <DialogDescription className="text-xs">
+              Rôle principal : {rolesFor ? roleLabels[rolesFor.role] : ""}. Les droits sont l&apos;union de tous ses rôles ; le changement s&apos;applique tout de suite.
+            </DialogDescription>
+          </DialogHeader>
+          <RolePicker roles={creatableRoles.filter((r) => r !== rolesFor?.role)} value={editRoles} onChange={setEditRoles} />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRolesFor(null)}>
+              Annuler
+            </Button>
+            <Button onClick={saveRoles}>Enregistrer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="gap-0 p-0 sm:max-w-lg">
@@ -502,6 +556,13 @@ function UserManagement({ currentUserId, stations }: { currentUserId: number; st
                     ))}
                   </SelectContent>
                 </Select>
+              </Field>
+              <Field label="Rôles en plus" className="sm:col-span-2" hint="Facultatif : la personne cumule les droits de ses rôles.">
+                <RolePicker
+                  roles={creatableRoles.filter((r) => r !== form.role)}
+                  value={form.extra_roles}
+                  onChange={(extra_roles) => setForm({ ...form, extra_roles })}
+                />
               </Field>
               {needsStation && (
                 <Field
@@ -970,5 +1031,31 @@ function OperationsSettingsForm({ canEdit }: { canEdit: boolean }) {
         </form>
       )}
     </Panel>
+  );
+}
+
+/** Choix des rôles en plus : une pastille par rôle, cochée ou non. */
+function RolePicker({ roles, value, onChange }: { roles: Role[]; value: Role[]; onChange: (v: Role[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {roles.map((r) => {
+        const on = value.includes(r);
+        return (
+          <button
+            key={r}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? value.filter((x) => x !== r) : [...value, r])}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors",
+              on ? "border-primary bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent"
+            )}
+          >
+            {on ? <Check className="size-3.5" /> : null}
+            {roleLabels[r]}
+          </button>
+        );
+      })}
+    </div>
   );
 }

@@ -45,19 +45,38 @@ class UserBase(BaseModel):
     last_name: str | None = None
 
 
+def _no_super_admin_extra(roles: list[Role] | None) -> list[Role] | None:
+    if roles and Role.SUPER_ADMIN in roles:
+        raise ValueError("Le rôle super administrateur ne peut pas être ajouté en plus")
+    return roles
+
+
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
     role: Role = Role.ADMIN
+    # Rôles en plus du rôle principal : les droits de l'utilisateur sont l'union de ses rôles.
+    extra_roles: list[Role] = Field(default_factory=list, max_length=8)
     station_id: int | None = None
+
+    @model_validator(mode="after")
+    def _check_extra(self):
+        _no_super_admin_extra(self.extra_roles)
+        return self
 
 
 class UserUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: Role | None = None
+    extra_roles: list[Role] | None = Field(None, max_length=8)
     is_active: bool | None = None
     password: str | None = Field(None, min_length=8)
     station_id: int | None = None
+
+    @model_validator(mode="after")
+    def _check_extra(self):
+        _no_super_admin_extra(self.extra_roles)
+        return self
 
 
 class UserSummary(BaseModel):
@@ -74,6 +93,8 @@ class UserRead(UserBase):
 
     id: int
     role: Role
+    extra_roles: list[Role] = []
+    roles: list[Role] = []
     is_active: bool
     company_id: int | None
     station_id: int | None = None

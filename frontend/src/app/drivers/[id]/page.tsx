@@ -29,7 +29,7 @@ import {
   setDriverPin,
 } from "@/lib/api";
 import { documentTypeLabels, staffTypeLabels, DOCUMENT_ACCEPT } from "@/lib/labels";
-import { canManagePins } from "@/lib/roles";
+import { canManagePins, rolesOf } from "@/lib/roles";
 import { formatDate, formatNumber, formatRelativeDays, fullName, initials, expiryTone } from "@/lib/format";
 import { toast } from "sonner";
 import type { Document, Driver, FineStatement, StaffType, Vehicle } from "@/types";
@@ -92,7 +92,7 @@ function FinesPanel({ driverId }: { driverId: number }) {
 
 function SignaturePinPanel({ driver, onUpdated }: { driver: Driver; onUpdated: (d: Driver) => void }) {
   const user = useCurrentUser();
-  const canManage = user ? canManagePins(user.role) : false;
+  const canManage = user ? canManagePins(rolesOf(user)) : false;
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");

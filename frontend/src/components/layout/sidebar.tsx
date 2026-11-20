@@ -23,9 +23,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { canAccess, roleLabels } from "@/lib/roles";
+import { canAccess, roleLabels, rolesOf } from "@/lib/roles";
 import { fullName, initials } from "@/lib/format";
-import type { Role, User } from "@/types";
+import type { User } from "@/types";
 
 type NavItem = { href: string; label: string; icon: React.ElementType };
 
@@ -112,7 +112,7 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
 }
 
 export function Sidebar({ user, className, onNavigate }: { user: User; className?: string; onNavigate?: () => void }) {
-  const role: Role = user.role;
+  const role = rolesOf(user);
   const groups = navGroups
     .map((g) => ({ ...g, items: g.items.filter((item) => canAccess(role, item.href)) }))
     .filter((g) => g.items.length > 0);

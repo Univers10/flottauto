@@ -70,7 +70,7 @@ import {
   createNeed,
   listInspections,
 } from "@/lib/api";
-import { canRunInspections } from "@/lib/roles";
+import { canRunInspections, rolesOf } from "@/lib/roles";
 import {
   documentTypeLabels,
   energyLabels,
@@ -2002,7 +2002,7 @@ function VehicleNeedsPanel({
   onCreated: () => void;
 }) {
   const user = useCurrentUser();
-  const canWrite = user ? canRunInspections(user.role) : false;
+  const canWrite = user ? canRunInspections(rolesOf(user)) : false;
   const [open, setOpen] = useState(false);
 
   return (
@@ -2183,7 +2183,7 @@ function VehicleNeedForm({ vehicleId, onCreated, onClose }: { vehicleId: number;
 function VehicleInspectionsPanel({ vehicleId, inspections }: { vehicleId: number; inspections: InspectionListItem[] }) {
   const router = useRouter();
   const user = useCurrentUser();
-  const canWrite = user ? canRunInspections(user.role) : false;
+  const canWrite = user ? canRunInspections(rolesOf(user)) : false;
 
   return (
     <Panel

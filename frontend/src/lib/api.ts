@@ -111,7 +111,7 @@ export const getMe = () => api.get<User>("/auth/me");
 // Users
 export const listUsers = () => api.get<User[]>("/auth/users");
 export const createUser = (body: Partial<User> & { password: string }) => api.post<User>("/auth/users", body);
-export const updateUser = (id: number, body: Partial<Pick<User, "first_name" | "last_name" | "role" | "is_active">> & { password?: string }) =>
+export const updateUser = (id: number, body: Partial<Pick<User, "first_name" | "last_name" | "role" | "is_active" | "extra_roles">> & { password?: string }) =>
   api.put<User>(`/auth/users/${id}`, body);
 
 export function uploadFile<T>(path: string, formData: FormData) {

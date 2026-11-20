@@ -26,7 +26,7 @@ import {
   updateDeparture,
 } from "@/lib/api";
 import { checklistItemTone, departureLight, departureStatus, inspectionVerdict, type Tone } from "@/lib/labels";
-import { canRunInspections } from "@/lib/roles";
+import { canRunInspections, rolesOf } from "@/lib/roles";
 import { formatDate, formatNumber, fullName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { vehicleFullName } from "@/lib/vehicle";
@@ -80,7 +80,7 @@ export default function DepartureDetailPage() {
 function DepartureDetail({ id }: { id: number }) {
   const router = useRouter();
   const user = useCurrentUser();
-  const canEdit = !!user && canRunInspections(user.role);
+  const canEdit = !!user && canRunInspections(rolesOf(user));
   const [departure, setDeparture] = useState<Departure | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [inspection, setInspection] = useState<Inspection | null>(null);

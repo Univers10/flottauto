@@ -59,7 +59,8 @@ def list_users_by_company(
 ):
     query = db.query(models.User).filter(models.User.company_id == company_id)
     if role:
-        query = query.filter(models.User.role == role)
+        # Rôle principal ou rôle en plus.
+        query = query.filter((models.User.role == role) | models.User.extra_roles_csv.like(f"%{role.value}%"))
     return query.order_by(models.User.created_at.desc()).offset(skip).limit(limit).all()
 
 

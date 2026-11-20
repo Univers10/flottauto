@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/app/primitives";
 import { getMe, login, setToken } from "@/lib/api";
-import { homePathFor } from "@/lib/roles";
+import { homePathFor, rolesOf } from "@/lib/roles";
 import { toast } from "sonner";
 
 const highlights = [
@@ -30,7 +30,7 @@ export default function LoginPage() {
       const data = await login(email, password);
       setToken(data.access_token);
       const me = await getMe();
-      router.push(homePathFor(me.role));
+      router.push(homePathFor(rolesOf(me)));
       router.refresh();
     } catch (err: any) {
       toast.error(err.message === "Incorrect email or password" ? "Email ou mot de passe incorrect" : err.message || "Erreur de connexion");

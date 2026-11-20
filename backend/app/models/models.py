@@ -155,6 +155,8 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.READER, nullable=False)
+    # Rôles en plus du rôle principal (ex. superviseur + comptable) : les droits sont l'union des rôles.
+    extra_roles_csv: Mapped[str | None] = mapped_column("extra_roles", String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_invited: Mapped[bool] = mapped_column(Boolean, default=False)
     invitation_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
@@ -169,6 +171,32 @@ class User(Base):
 
     company = relationship("Company", back_populates="users")
     station = relationship("Station")
+
+    @property
+    def extra_roles(self) -> list[Role]:
+        out: list[Role] = []
+        for v in (self.extra_roles_csv or "").split(","):
+            try:
+                r = Role(v.strip())
+            except ValueError:
+                continue
+            if r != self.role and r not in out:
+                out.append(r)
+        return out
+
+    @extra_roles.setter
+    def extra_roles(self, value: list[Role] | None) -> None:
+        roles = [Role(r) for r in (value or [])]
+        unique = [r for i, r in enumerate(roles) if r not in roles[:i] and r != self.role]
+        self.extra_roles_csv = ",".join(r.value for r in unique) or None
+
+    @property
+    def roles(self) -> list[Role]:
+        """Rôle principal puis rôles en plus."""
+        return [self.role, *self.extra_roles]
+
+    def has_role(self, *roles: Role) -> bool:
+        return any(r in roles for r in self.roles)
 
 
 class CompanySettings(Base):
