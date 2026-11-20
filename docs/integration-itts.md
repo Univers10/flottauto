@@ -81,6 +81,28 @@ Même adresse, même signature. ITTS envoie la liste **complète** des cars, gar
 - Un instantané plus ancien (`occurred_at`) que le dernier appliqué est ignoré. Réponse `200 {"status": "processed" | "duplicate"}`.
 - ITTS fait foi pour le **numéro de parc** (`number`) et le nombre de places ; FlottAuto garde son immatriculation et ses données techniques.
 
+### 2 ter. Demande de location : `rental.requested`
+
+Saisie en gare dans ITTS Gestion (menu « Location de car »). FlottAuto crée un **convoi brouillon** ; l'acompte devient un paiement du convoi.
+
+```json
+{
+  "id": "0193…", "type": "rental.requested", "occurred_at": "2026-11-21T09:00:00.000Z",
+  "rental": {
+    "id": "0193…", "number": "LOC-2026-001",
+    "client": { "name": "Paroisse Saint-Paul", "phone": "+2250707070707" },
+    "purpose": "pilgrimage", "from": "Abidjan", "to": "Yamoussoukro",
+    "departure_at": "2026-12-01T06:00:00.000Z", "return_date": "2026-12-03",
+    "seats": 60, "price_per_seat": 8000, "deposit": 200000, "deposit_method": "wave",
+    "notes": null,
+    "station": { "id": "…", "code": "ABO", "name": "Abidjan-Abobo" },
+    "requested_by": { "id": "…", "name": "Awa" }
+  }
+}
+```
+
+`purpose` : valeurs des convois (pilgrimage, funeral, wedding, tourism, corporate, sport, other). `deposit_method` : cash, wave, orange_money, mtn, moov (null sans acompte). Dédoublonnage par `id` d'événement.
+
 ## 3. ITTS → FlottAuto : autorisation de départ
 
 `GET {FLOTTAUTO_URL}/api/v1/integrations/itts/departures/{itts_departure_id}/authorization?bus_id={Bus.id}` (signé, corps vide ; la requête `?bus_id=…` fait partie du texte signé)
