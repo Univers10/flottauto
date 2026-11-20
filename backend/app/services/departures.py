@@ -243,7 +243,9 @@ def _vehicle_items(db: Session, dep: models.Departure, warn_km: int) -> list[dic
     else:
         items.append(_item("oil_change", "Vidange non dépassée", OK, f"{due} km restants"))
 
-    consumption = dep.vehicle.fuel_consumption_l_100km
+    from app.services.consumption import effective_l_100km
+
+    consumption = effective_l_100km(db, dep.vehicle)
     liters = insp.fuel_liters if insp is not None else None
     if dep.distance_km and consumption and liters is not None:
         need = round(dep.distance_km * float(consumption) / 100)

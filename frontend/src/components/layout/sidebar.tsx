@@ -16,6 +16,7 @@ import {
   Route,
   Settings,
   TicketCheck,
+  UserRound,
   Users,
   Wrench,
 } from "lucide-react";
@@ -48,7 +49,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Cars et équipages",
     items: [
       { href: "/vehicles", label: "Cars", icon: BusFront },
-      { href: "/drivers", label: "Personnel", icon: Users },
+      { href: "/drivers", label: "Chauffeurs", icon: Users },
+      { href: "/conveyors", label: "Convoyeurs", icon: UserRound },
       { href: "/inspections", label: "États des lieux", icon: ClipboardCheck },
     ],
   },

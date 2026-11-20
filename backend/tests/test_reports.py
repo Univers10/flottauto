@@ -73,3 +73,17 @@ def test_reports_are_per_company(client, auth, make_user, other_company, db, veh
     db.commit()
     _, other = make_user(R.ADMIN, other_company)
     assert client.get(API, headers=other).json()["totals"]["fuel"] == 0
+
+
+def test_quarter_year_and_free_period_labels(client, auth):
+    h = auth(models.Role.MANAGER)
+    cases = {
+        ("2026-07-01", "2026-09-30"): "3e trimestre 2026",
+        ("2026-01-01", "2026-03-31"): "1er trimestre 2026",
+        ("2026-01-01", "2026-12-31"): "Année 2026",
+        ("2026-11-03", "2026-11-17"): "Du 03/11/2026 au 17/11/2026",
+    }
+    for (start, end), label in cases.items():
+        r = client.get(f"/api/v1/reports/summary?start={start}&end={end}", headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["label"] == label

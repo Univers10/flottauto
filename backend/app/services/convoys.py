@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from app import crud, models, schemas
 from app.services import departures as dep_svc
@@ -78,8 +78,11 @@ def compute_account(convoy: models.Convoy, settings: models.CompanySettings) -> 
     revenue = transport + immobilization
 
     vehicle = convoy.vehicle
-    consumption = float(vehicle.fuel_consumption_l_100km) if vehicle and vehicle.fuel_consumption_l_100km else float(
-        settings.convoy_consumption_l_100km)
+    # Consommation mesurée sur les pleins du car, sinon sa valeur théorique, sinon la valeur des réglages.
+    from app.services.consumption import effective_l_100km
+
+    measured = effective_l_100km(object_session(vehicle), vehicle) if vehicle is not None and object_session(vehicle) is not None else None
+    consumption = measured if measured is not None else float(settings.convoy_consumption_l_100km)
     liters = _round(km * consumption / 100)
     fuel = liters * settings.diesel_price_per_liter
     drivers = 2 if convoy.relief_driver_id else 1

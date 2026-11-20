@@ -106,6 +106,7 @@ import type {
   InspectionListItem,
   NeedPriority,
   VehicleNeed,
+  VehicleConsumption,
 } from "@/types";
 
 const statusItems = Object.fromEntries(
@@ -264,6 +265,7 @@ export default function VehicleDetailPage() {
   const [needs, setNeeds] = useState<VehicleNeed[]>([]);
   const [needsTotal, setNeedsTotal] = useState(0);
   const [inspections, setInspections] = useState<InspectionListItem[]>([]);
+  const [consumption, setConsumption] = useState<VehicleConsumption | null>(null);
 
   useEffect(() => {
     // Les mécaniciens n'ont pas accès aux paramètres (403) : on garde les seuils par défaut.
@@ -302,6 +304,8 @@ export default function VehicleDetailPage() {
   async function load() {
     setLoading(true);
     try {
+      // Consommation mesurée : information complémentaire, un échec ne bloque pas la fiche.
+      api.get<VehicleConsumption>(`/vehicles/${vehicleId}/consumption`).then(setConsumption).catch(() => setConsumption(null));
       const [v, docs, orders, allDrivers, tollExpenses, fuelRes] = await Promise.all([
         api.get<Vehicle>(`/vehicles/${vehicleId}`),
         api.get<Document[]>(`/vehicles/${vehicleId}/documents`),
@@ -865,7 +869,18 @@ export default function VehicleDetailPage() {
                       className="border-t pt-2.5 md:border-t-0 md:pt-0"
                       items={[
                         { label: "Capacité du réservoir", value: formatNumber(vehicle.fuel_tank_liters, "L") },
-                        { label: "Consommation moyenne", value: formatNumber(vehicle.fuel_consumption_l_100km, "L/100 km") },
+                        {
+                          label: "Consommation mesurée",
+                          value: consumption?.measured_l_100km != null ? (
+                            <span className={cn(consumption.anomaly && cn(toneText("danger"), "font-semibold"))}>
+                              {formatNumber(consumption.measured_l_100km, "L/100 km")}
+                              {consumption.gap_pct != null ? ` (${consumption.gap_pct > 0 ? "+" : ""}${consumption.gap_pct} %)` : ""}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Pas encore (deux pleins à ras avec kilométrage)</span>
+                          ),
+                        },
+                        { label: "Consommation théorique", value: formatNumber(vehicle.fuel_consumption_l_100km, "L/100 km") },
                         {
                           label: "Identifiant ITTS",
                           value: vehicle.itts_bus_id ? <span className="font-mono text-xs">{vehicle.itts_bus_id}</span> : "—",

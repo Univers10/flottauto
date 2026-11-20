@@ -658,6 +658,23 @@ export interface ReportVehicleRow {
   needs_to_plan: number;
   total_cost: number;
   cost_per_km: number | null;
+  /** Mesurée sur les pleins à ras des intervalles qui finissent dans la période. */
+  l_100km: number | null;
+  l_100km_theoretical: number | null;
+  consumption_gap_pct: number | null;
+  consumption_anomaly: boolean;
+}
+
+/** Fiche du car : consommation mesurée sur les derniers pleins à ras. */
+export interface VehicleConsumption {
+  measured_l_100km: number | null;
+  theoretical_l_100km: number | null;
+  gap_pct: number | null;
+  anomaly: boolean;
+  intervals: number;
+  km: number;
+  liters: number;
+  since: string | null;
 }
 
 export interface ReportSummary {

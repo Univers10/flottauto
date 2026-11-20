@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from app import crud, models
+from app.services import consumption as consumption_svc
 from app.services import convoys as convoy_svc
 from app.services import interventions as iv_svc
 
@@ -27,9 +28,18 @@ def _bounds(start: date, end: date) -> tuple[datetime, datetime]:
     return datetime.combine(start, time.min), datetime.combine(end + timedelta(days=1), time.min)
 
 
+def _month_end(year: int, month: int) -> date:
+    return (date(year + month // 12, month % 12 + 1, 1)) - timedelta(days=1)
+
+
 def _label(start: date, end: date) -> str:
     if start.weekday() == 0 and end == start + timedelta(days=6):
         return f"Semaine du {start:%d/%m} au {end:%d/%m/%Y}"
+    if start == date(start.year, 1, 1) and end == date(start.year, 12, 31):
+        return f"Année {start.year}"
+    if start.day == 1 and start.month in (1, 4, 7, 10) and end == _month_end(start.year, start.month + 2):
+        quarter = (start.month - 1) // 3 + 1
+        return f"{'1er' if quarter == 1 else f'{quarter}e'} trimestre {start.year}"
     if start.day == 1 and (end + timedelta(days=1)).day == 1 and start.month == end.month:
         months = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
         return f"{months[start.month - 1].capitalize()} {start.year}"
@@ -188,9 +198,16 @@ def summary(db: Session, company_id: int, start: date, end: date) -> dict:
         for d in docs if d.vehicle_id in rows
     ]
 
+    measured = consumption_svc.per_vehicle_in_period(db, company_id, start, end)
+    theoretical = {v.id: float(v.fuel_consumption_l_100km) if v.fuel_consumption_l_100km else None for v in vehicles}
     vehicle_rows = []
     for r in rows.values():
         r["fuel_liters"] = round(r["fuel_liters"], 1)
+        r["l_100km"] = measured.get(r["vehicle_id"])
+        r["l_100km_theoretical"] = theoretical.get(r["vehicle_id"])
+        gap = consumption_svc.gap_pct(r["l_100km"], r["l_100km_theoretical"])
+        r["consumption_gap_pct"] = gap
+        r["consumption_anomaly"] = gap is not None and gap > consumption_svc.ANOMALY_PCT
         r["total_cost"] = r["fuel"] + r["tolls"] + r["maintenance"]
         r["cost_per_km"] = round(r["total_cost"] / r["km"]) if r["km"] else None
         if r["total_cost"] or r["km"] or r["departures"] or r["convoys"] or r["needs_to_plan"]:

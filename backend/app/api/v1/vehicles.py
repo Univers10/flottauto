@@ -59,6 +59,21 @@ def get_vehicle(
     return vehicle
 
 
+@router.get("/{vehicle_id}/consumption")
+def get_vehicle_consumption(
+    vehicle_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Consommation mesurée sur les derniers pleins à ras, comparée à la valeur théorique de la fiche."""
+    vehicle = crud.get_vehicle(db, vehicle_id, _company_id(current_user))
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    from app.services.consumption import vehicle_consumption
+
+    return vehicle_consumption(db, vehicle)
+
+
 @router.put("/{vehicle_id}", response_model=schemas.VehicleRead)
 def update_vehicle(
     vehicle_id: int,

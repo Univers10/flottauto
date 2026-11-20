@@ -6,6 +6,7 @@ import { BusFront, CircleAlert, FileDown, Fuel, Printer, Route, Wrench } from "l
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, PageHeader, Panel, StatCard, StatusBadge, toneText } from "@/components/app/primitives";
 import { getReportSummary } from "@/lib/api";
@@ -16,21 +17,48 @@ import type { ReportSummary } from "@/types";
 
 const F = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${formatNumber(n)} F`);
 
-type PeriodKey = "this_week" | "last_week" | "this_month" | "last_month";
+type PeriodKey = "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_year" | "last_year" | "custom";
 
 const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: "this_week", label: "Cette semaine" },
   { key: "last_week", label: "Semaine dernière" },
   { key: "this_month", label: "Ce mois" },
   { key: "last_month", label: "Mois dernier" },
+  { key: "this_quarter", label: "Ce trimestre" },
+  { key: "last_quarter", label: "Trimestre dernier" },
+  { key: "this_year", label: "Cette année" },
+  { key: "last_year", label: "Année dernière" },
+  { key: "custom", label: "Autre période" },
 ];
+
+const TITLES: Record<PeriodKey, string> = {
+  this_week: "Point hebdomadaire",
+  last_week: "Point hebdomadaire",
+  this_month: "Bilan du mois",
+  last_month: "Bilan du mois",
+  this_quarter: "Bilan du trimestre",
+  last_quarter: "Bilan du trimestre",
+  this_year: "Bilan de l'année",
+  last_year: "Bilan de l'année",
+  custom: "Bilan de la période",
+};
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function range(key: PeriodKey): [string, string] {
+function range(key: Exclude<PeriodKey, "custom">): [string, string] {
   const today = new Date();
+  if (key === "this_year" || key === "last_year") {
+    const y = today.getFullYear() - (key === "last_year" ? 1 : 0);
+    return [`${y}-01-01`, `${y}-12-31`];
+  }
+  if (key === "this_quarter" || key === "last_quarter") {
+    const q = Math.floor(today.getMonth() / 3) - (key === "last_quarter" ? 1 : 0);
+    const first = new Date(today.getFullYear(), q * 3, 1);
+    const last = new Date(today.getFullYear(), q * 3 + 3, 0);
+    return [iso(first), iso(last)];
+  }
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
   if (key === "this_week" || key === "last_week") {
@@ -51,8 +79,8 @@ function csvCell(value: unknown): string {
 }
 
 function exportCsv(report: ReportSummary) {
-  const header = ["Car", "Immatriculation", "Km", "Carburant (F)", "Litres", "Péages (F)", "Entretien (F)", "Coût total (F)", "Coût / km (F)", "Départs", "Convois", "Recette convois (F)", "À prévoir (F)"];
-  const rows = report.vehicles.map((v) => [v.label, v.registration, v.km, v.fuel, v.fuel_liters, v.tolls, v.maintenance, v.total_cost, v.cost_per_km ?? "", v.departures, v.convoys, v.convoy_revenue, v.needs_to_plan]);
+  const header = ["Car", "Immatriculation", "Km", "Carburant (F)", "Litres", "L/100 km", "L/100 km théorique", "Péages (F)", "Entretien (F)", "Coût total (F)", "Coût / km (F)", "Départs", "Convois", "Recette convois (F)", "À prévoir (F)"];
+  const rows = report.vehicles.map((v) => [v.label, v.registration, v.km, v.fuel, v.fuel_liters, v.l_100km ?? "", v.l_100km_theoretical ?? "", v.tolls, v.maintenance, v.total_cost, v.cost_per_km ?? "", v.departures, v.convoys, v.convoy_revenue, v.needs_to_plan]);
   // Point-virgule : Excel en français ouvre le fichier directement en colonnes.
   const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(";")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -67,10 +95,15 @@ export default function ReportsPage() {
   const [period, setPeriod] = useState<PeriodKey>("this_week");
   const [report, setReport] = useState<ReportSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // Autre période : du … au … (13 mois au plus).
+  const [from, setFrom] = useState(() => range("this_month")[0]);
+  const [to, setTo] = useState(() => iso(new Date()));
+  const customReady = period !== "custom" || (from !== "" && to !== "" && from <= to);
 
   useEffect(() => {
+    if (!customReady) return;
     let cancelled = false;
-    const [start, end] = range(period);
+    const [start, end] = period === "custom" ? [from, to] : range(period);
     getReportSummary(start, end)
       .then((r) => !cancelled && setReport(r))
       .catch((err: Error) => !cancelled && toast.error(err.message || "Rapport indisponible"))
@@ -78,14 +111,12 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [period]);
-
-  const weekly = period === "this_week" || period === "last_week";
+  }, [period, from, to, customReady]);
 
   return (
     <AppShell>
       <PageHeader
-        title={weekly ? "Point hebdomadaire" : "Bilan du mois"}
+        title={TITLES[period]}
         description={report ? report.label : "Coût par car, convois, réparations à surveiller et dépenses à prévoir."}
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
@@ -120,6 +151,19 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
+      {period === "custom" ? (
+        <div className="mb-6 flex flex-wrap items-end gap-3 print:hidden">
+          <label className="grid gap-1 text-sm font-medium">
+            Du
+            <DateInput value={from} max={to || undefined} onValueChange={(v) => { setLoading(true); setFrom(v); }} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Au
+            <DateInput value={to} min={from || undefined} onValueChange={(v) => { setLoading(true); setTo(v); }} />
+          </label>
+          {!customReady ? <p className="pb-2 text-sm text-muted-foreground">Choisissez les deux dates (début avant fin).</p> : null}
+        </div>
+      ) : null}
 
       {loading || !report ? (
         <div className="space-y-6">
@@ -207,6 +251,7 @@ function ReportView({ report }: { report: ReportSummary }) {
                   <th className="px-4 py-2 text-left font-medium">Car</th>
                   <th className="px-3 py-2 text-right font-medium">Km</th>
                   <th className="px-3 py-2 text-right font-medium">Carburant</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Mesurée sur les pleins à ras">L/100 km</th>
                   <th className="px-3 py-2 text-right font-medium">Péages</th>
                   <th className="px-3 py-2 text-right font-medium">Entretien</th>
                   <th className="px-3 py-2 text-right font-medium">Total</th>
@@ -225,6 +270,13 @@ function ReportView({ report }: { report: ReportSummary }) {
                     </td>
                     <td className="px-3 py-2 text-right tabular">{v.km ? formatNumber(v.km) : "—"}</td>
                     <td className="px-3 py-2 text-right tabular">{formatNumber(v.fuel)}</td>
+                    <td
+                      className={cn("px-3 py-2 text-right tabular", v.consumption_anomaly && cn(toneText("danger"), "font-semibold"))}
+                      title={v.l_100km_theoretical ? `Théorique ${v.l_100km_theoretical} L/100 km` : undefined}
+                    >
+                      {v.l_100km ?? "—"}
+                      {v.consumption_anomaly && v.consumption_gap_pct != null ? ` (+${v.consumption_gap_pct} %)` : ""}
+                    </td>
                     <td className="px-3 py-2 text-right tabular">{formatNumber(v.tolls)}</td>
                     <td className="px-3 py-2 text-right tabular">{formatNumber(v.maintenance)}</td>
                     <td className="px-3 py-2 text-right font-semibold tabular">{formatNumber(v.total_cost)}</td>
