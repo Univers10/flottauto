@@ -280,9 +280,9 @@ function DepartureCard({
         <div className="min-w-0 space-y-2">
           {header}
           <p className={cn("text-2xl font-bold tracking-tight", toneText(light.tone))}>{light.headline}</p>
-          {(dep.driver || dep.conveyor) && (
+          {(dep.driver || dep.conveyor || dep.conveyor_name) && (
             <p className="text-xs text-muted-foreground">
-              {[dep.driver ? `Chauffeur ${fullName(dep.driver)}` : null, dep.conveyor ? `Convoyeur ${fullName(dep.conveyor)}` : null].filter(Boolean).join(" · ")}
+              {[dep.driver ? `Chauffeur ${fullName(dep.driver)}` : null, dep.conveyor ? `Convoyeur ${fullName(dep.conveyor)}` : dep.conveyor_name ? `Convoyeur ${dep.conveyor_name}` : null].filter(Boolean).join(" · ")}
             </p>
           )}
         </div>

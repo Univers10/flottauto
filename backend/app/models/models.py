@@ -218,7 +218,7 @@ class CompanySettings(Base):
     gps_relay_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     document_warning_days: Mapped[int] = mapped_column(Integer, default=30)
     oil_change_warning_km: Mapped[int] = mapped_column(Integer, default=2000)
-    convoy_consumption_l_100km: Mapped[int] = mapped_column(Integer, default=33, server_default="33")
+    convoy_consumption_l_100km: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
     convoy_number_prefix: Mapped[str] = mapped_column(String(20), default="CV", server_default="CV")
     # Contrat de transport : identité du transporteur imprimée sur le contrat.
     legal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -586,6 +586,8 @@ class Inspection(Base):
     scheduled_departure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    # Convoyeur non enregistré : son nom, saisi à la main (pas de signature par PIN).
+    conveyor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     mileage: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fuel_level: Mapped[FuelLevel | None] = mapped_column(_str_enum(FuelLevel), nullable=True)
     fuel_liters: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -725,6 +727,7 @@ class Departure(Base):
     distance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
+    conveyor_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     inspection_id: Mapped[int | None] = mapped_column(ForeignKey("inspections.id"), nullable=True)
     itts_departure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     convoy_id: Mapped[int | None] = mapped_column(ForeignKey("convoys.id"), nullable=True, index=True)
@@ -821,6 +824,12 @@ class Convoy(Base):
     relief_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     conveyor_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Charges saisies à la main (vide = calcul automatique depuis les Paramètres).
+    fuel_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    driver_rations_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conveyor_rations_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Lien du contrat envoyé au client (WhatsApp, mail) : jeton secret, lecture seule.
+    share_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     contract_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
@@ -914,6 +923,19 @@ class Fine(Base):
 
     vehicle = relationship("Vehicle")
     driver = relationship("Driver")
+    photos = relationship("FinePhoto", order_by="FinePhoto.id", cascade="all, delete-orphan")
+
+
+class FinePhoto(Base):
+    """Photo d'une contravention : procès-verbal, reçu de paiement, car…"""
+
+    __tablename__ = "fine_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    fine_id: Mapped[int] = mapped_column(ForeignKey("fines.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class FineRepayment(Base):

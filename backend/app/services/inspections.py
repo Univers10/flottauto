@@ -17,7 +17,8 @@ Status = models.ItemStatus
 
 # Rôles qui tiennent les états des lieux et signent comme « chef de gare ».
 WRITERS = (R.SUPER_ADMIN, R.ADMIN, R.MANAGER, R.STATION_MANAGER, R.OPERATIONS_SUPERVISOR)
-REQUIRED_SIGNATURES = {models.SignatureRole.STATION_MANAGER, models.SignatureRole.DRIVER, models.SignatureRole.CONVEYOR}
+# Le convoyeur n'est pas toujours du départ : sa signature est facultative.
+REQUIRED_SIGNATURES = {models.SignatureRole.STATION_MANAGER, models.SignatureRole.DRIVER}
 REPORT_DEADLINE_MINUTES = 60
 FRESH_PHOTO_MINUTES = 10
 MAX_MILEAGE_JUMP_KM = 3000
@@ -228,6 +229,7 @@ def create_inspection(db: Session, company_id: int, user: models.User, payload: 
         data["scheduled_departure_at"] = data["scheduled_departure_at"] or departure.scheduled_at
         data["driver_id"] = data["driver_id"] or departure.driver_id
         data["conveyor_id"] = data["conveyor_id"] or departure.conveyor_id
+        data["conveyor_name"] = data.get("conveyor_name") or departure.conveyor_name
     vehicle = crud.get_vehicle(db, data["vehicle_id"], company_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
@@ -237,6 +239,7 @@ def create_inspection(db: Session, company_id: int, user: models.User, payload: 
         if previous is not None:
             data["driver_id"] = data["driver_id"] or previous.driver_id
             data["conveyor_id"] = data["conveyor_id"] or previous.conveyor_id
+            data["conveyor_name"] = data.get("conveyor_name") or previous.conveyor_name
             data["route_label"] = data["route_label"] or previous.route_label
     # Heure d'arrivée fixée par le serveur : le délai d'envoi du bilan (1 h) ne peut pas être contourné.
     data["arrived_at"] = _now() if payload.kind == Kind.ARRIVAL else None
@@ -299,7 +302,9 @@ def update_inspection(db: Session, insp: models.Inspection, payload: schemas.Ins
         data["scheduled_departure_at"] = _naive(data["scheduled_departure_at"])
     for field, value in data.items():
         setattr(insp, field, value)
-    _clear_signatures(insp)
+    # Le nom du convoyeur (non signataire) ne touche pas au contrôle : les signatures restent.
+    if set(data) - {"conveyor_name"}:
+        _clear_signatures(insp)
     db.commit()
     db.refresh(insp)
     return insp
@@ -365,7 +370,7 @@ def sign(db: Session, insp: models.Inspection, payload: schemas.SignatureCreate,
     else:
         person_id = insp.driver_id if role == models.SignatureRole.DRIVER else insp.conveyor_id
         if person_id is None:
-            raise HTTPException(status_code=409, detail="Aucun chauffeur ou convoyeur affecté à cet état des lieux")
+            raise HTTPException(status_code=409, detail="Aucun chauffeur ou convoyeur enregistré sur cet état des lieux")
         person = crud.get_driver(db, person_id, insp.company_id)
         if not person or not person.pin_hash:
             raise HTTPException(status_code=409, detail="Cette personne n'a pas de PIN de signature")
@@ -395,7 +400,7 @@ def validate(db: Session, insp: models.Inspection, user: models.User) -> models.
         raise HTTPException(status_code=409, detail="État des lieux incomplet")
     missing = REQUIRED_SIGNATURES - {s.role for s in insp.signatures}
     if missing:
-        raise HTTPException(status_code=409, detail="Les 3 signatures (chef de gare, chauffeur, convoyeur) sont obligatoires")
+        raise HTTPException(status_code=409, detail="Les signatures du chef de gare et du chauffeur sont obligatoires")
     if insp.kind == Kind.ARRIVAL and insp.departure_inspection_id is None:
         departure = _last_validated_departure(db, insp.vehicle_id, insp.company_id)
         if departure is not None:

@@ -24,6 +24,26 @@ def list_stations(
     return crud.list_stations(db, _company_id(current_user))
 
 
+@router.get("/distance", response_model=schemas.RoadDistance)
+def road_distance(origin: str, destination: str, current_user: models.User = Depends(get_current_user)):
+    """Distance par la route entre deux villes (« Abobo », « Gare d'Odienné »…)."""
+    from app.services import geo
+
+    if len(origin) > 120 or len(destination) > 120:
+        raise HTTPException(status_code=422, detail="Nom de ville trop long")
+    found = geo.road_distance(origin, destination)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Ville inconnue : saisissez les kilomètres à la main")
+    return found
+
+
+@router.get("/cities", response_model=list[str])
+def cities(current_user: models.User = Depends(get_current_user)):
+    from app.services import geo
+
+    return geo.city_names()
+
+
 @router.post("", response_model=schemas.StationRead, status_code=status.HTTP_201_CREATED)
 def create_station(
     payload: schemas.StationCreate,

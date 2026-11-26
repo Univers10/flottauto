@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { BusFront, Check, CircleAlert, FileText, Plus, Route, Trash2, X } from "lucide-react";
+import { BusFront, Calculator, Check, CircleAlert, FileText, Plus, Route, Trash2, X } from "lucide-react";
+import { ContractShare } from "@/components/app/contract-share";
 import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import {
   listAllVehicles,
   listDrivers,
   listStations,
+  roadDistance,
   updateConvoy,
 } from "@/lib/api";
 import { checklistItemTone, convoyPurposeLabels, convoyStatus, convoyVerdictTone, paymentMethodLabels } from "@/lib/labels";
@@ -54,6 +56,9 @@ type Form = {
   billed_days: string;
   daily_rate: string;
   tolls_estimate: string;
+  fuel_cost: string;
+  driver_rations_cost: string;
+  conveyor_rations_cost: string;
   vehicle_id: string;
   backup_vehicle_id: string;
   driver_id: string;
@@ -91,6 +96,9 @@ function toForm(c: Convoy): Form {
     billed_days: c.billed_days ? String(c.billed_days) : "",
     daily_rate: num(c.daily_rate),
     tolls_estimate: c.tolls_estimate ? String(c.tolls_estimate) : "",
+    fuel_cost: num(c.fuel_cost),
+    driver_rations_cost: num(c.driver_rations_cost),
+    conveyor_rations_cost: num(c.conveyor_rations_cost),
     vehicle_id: id(c.vehicle_id),
     backup_vehicle_id: id(c.backup_vehicle_id),
     driver_id: id(c.driver_id),
@@ -126,6 +134,9 @@ function toPayload(f: Form): ConvoyInput {
     billed_days: int(f.billed_days),
     daily_rate: intOrNull(f.daily_rate),
     tolls_estimate: int(f.tolls_estimate),
+    fuel_cost: intOrNull(f.fuel_cost),
+    driver_rations_cost: intOrNull(f.driver_rations_cost),
+    conveyor_rations_cost: intOrNull(f.conveyor_rations_cost),
     vehicle_id: ref(f.vehicle_id),
     backup_vehicle_id: ref(f.backup_vehicle_id),
     driver_id: ref(f.driver_id),
@@ -163,6 +174,7 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
   const [stations, setStations] = useState<Station[]>([]);
   const [missing, setMissing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [kmBusy, setKmBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState<"confirm" | "cancel" | "delete" | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -285,6 +297,31 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
   const closed = convoy.status === "done" || convoy.status === "cancelled";
   const canEdit = !!user && canManageConvoys(rolesOf(user)) && !closed;
   const canPay = !!user && canCollectConvoyPayments(rolesOf(user)) && convoy.status !== "cancelled";
+  const autoCharge = (label: string) => a.charge_lines.find((line) => line.label === label)?.amount ?? 0;
+
+  /** Kilomètres de chaque étape, calculés par la route entre les deux villes. */
+  async function computeKm() {
+    if (!form) return;
+    setKmBusy(true);
+    const unknown: string[] = [];
+    const segments = await Promise.all(
+      form.segments.map(async (s) => {
+        if (!s.from_label.trim() || !s.to_label.trim()) return s;
+        try {
+          const d = await roadDistance(s.from_label, s.to_label);
+          return { ...s, km: String(d.km) };
+        } catch {
+          unknown.push(`${s.from_label} → ${s.to_label}`);
+          return s;
+        }
+      })
+    );
+    change({ segments });
+    setKmBusy(false);
+    if (unknown.length) toast.warning(`Ville inconnue, saisissez les km à la main : ${unknown.join(", ")}`);
+    else toast.success("Kilomètres calculés par la route (vérifiez si besoin)");
+  }
+
   const drivers = people.filter((p) => p.staff_type === "driver" && (p.is_active || [convoy.driver_id, convoy.relief_driver_id].includes(p.id)));
   const conveyors = people.filter((p) => p.staff_type === "conveyor" && (p.is_active || p.id === convoy.conveyor_id));
   const seatsOf = vehicles.find((v) => String(v.id) === form.vehicle_id)?.seats;
@@ -352,6 +389,15 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
               <FileText className="size-4" />
               Voir le contrat
             </Link>
+          )}
+          {(convoy.status === "confirmed" || convoy.status === "done") && canPay && (
+            <ContractShare
+              convoy={convoy}
+              canRevoke={!!user && canManageConvoys(rolesOf(user))}
+              onChange={(next) => {
+                setConvoy(next);
+              }}
+            />
           )}
           {convoy.departure_id && (
             <Link href={`/departures/${convoy.departure_id}`} className={buttonVariants({ variant: "outline" })}>
@@ -516,7 +562,7 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
               </table>
             </div>
             {canEdit && (
-              <div className="border-t px-4 py-3">
+              <div className="flex flex-wrap gap-2 border-t px-4 py-3">
                 <Button
                   variant="outline"
                   size="sm"
@@ -528,6 +574,12 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
                   <Plus className="size-4" />
                   Ajouter une étape
                 </Button>
+                {form.segments.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={computeKm} disabled={kmBusy}>
+                    <Calculator className="size-4" />
+                    {kmBusy ? "Calcul…" : "Calculer les km"}
+                  </Button>
+                )}
               </div>
             )}
           </Panel>
@@ -567,8 +619,23 @@ function ConvoyEditor({ convoyId }: { convoyId: number }) {
               <Field label="Tarif d'immobilisation" htmlFor="daily_rate" hint="F par jour · vide = valeur des Paramètres">
                 <Input id="daily_rate" inputMode="numeric" className="tabular" value={form.daily_rate} onChange={(e) => change({ daily_rate: e.target.value })} />
               </Field>
-              <Field label="Péages estimés" htmlFor="tolls_estimate" hint="F pour tout l'itinéraire">
+            </div>
+          </Panel>
+
+          {/* D · Charges */}
+          <Panel title="Charges du convoi" description="Saisissez les montants réels. Laissez vide pour le calcul automatique (km × consommation, rations des Paramètres).">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Carburant" htmlFor="fuel_cost" hint={form.fuel_cost.trim() ? "F · montant saisi" : `F · auto : ${formatNumber(autoCharge("Carburant"))}`}>
+                <Input id="fuel_cost" inputMode="numeric" className="tabular" value={form.fuel_cost} placeholder="Auto" onChange={(e) => change({ fuel_cost: e.target.value })} />
+              </Field>
+              <Field label="Péages" htmlFor="tolls_estimate" hint="F pour tout l'itinéraire">
                 <Input id="tolls_estimate" inputMode="numeric" className="tabular" value={form.tolls_estimate} onChange={(e) => change({ tolls_estimate: e.target.value })} />
+              </Field>
+              <Field label="Chauffeur(s)" htmlFor="driver_rations_cost" hint={form.driver_rations_cost.trim() ? "F · montant saisi" : `F · auto : ${formatNumber(autoCharge("Ration chauffeurs"))}`}>
+                <Input id="driver_rations_cost" inputMode="numeric" className="tabular" value={form.driver_rations_cost} placeholder="Auto" onChange={(e) => change({ driver_rations_cost: e.target.value })} />
+              </Field>
+              <Field label="Convoyeur" htmlFor="conveyor_rations_cost" hint={form.conveyor_rations_cost.trim() ? "F · montant saisi" : `F · auto : ${formatNumber(autoCharge("Ration convoyeur"))}`}>
+                <Input id="conveyor_rations_cost" inputMode="numeric" className="tabular" value={form.conveyor_rations_cost} placeholder="Auto" onChange={(e) => change({ conveyor_rations_cost: e.target.value })} />
               </Field>
             </div>
           </Panel>

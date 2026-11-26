@@ -372,7 +372,7 @@ function DepartureDetail({ id }: { id: number }) {
                 { label: "Départ prévu", value: formatDateTime(dep.scheduled_at) },
                 { label: "Distance de l'étape", value: dep.distance_km !== null ? formatNumber(dep.distance_km, "km") : "—" },
                 { label: "Chauffeur", value: dep.driver ? fullName(dep.driver) : "Non assigné" },
-                { label: "Convoyeur", value: dep.conveyor ? fullName(dep.conveyor) : "Non assigné" },
+                { label: "Convoyeur", value: dep.conveyor ? fullName(dep.conveyor) : dep.conveyor_name || "Sans convoyeur" },
                 { label: "Bon de sortie", value: dep.exit_pass_number ? <span className="font-mono">{dep.exit_pass_number}</span> : "—" },
                 { label: "Émis le", value: formatDateTime(dep.exit_pass_issued_at) },
                 { label: "Valable jusqu'à", value: formatDateTime(dep.exit_pass_valid_until) },

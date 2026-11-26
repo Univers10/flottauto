@@ -18,8 +18,9 @@ R = models.Role
 CStatus = models.ConvoyStatus
 DStatus = models.DepartureStatus
 
-WRITERS = (R.SUPER_ADMIN, R.ADMIN, R.MANAGER, R.OPERATIONS_SUPERVISOR)
-CASHIERS = WRITERS + (R.ACCOUNTANT, R.STATION_MANAGER)
+# Le chef de gare crée et chiffre les convois de sa gare (demandes de location reçues au guichet).
+WRITERS = (R.SUPER_ADMIN, R.ADMIN, R.MANAGER, R.OPERATIONS_SUPERVISOR, R.STATION_MANAGER)
+CASHIERS = WRITERS + (R.ACCOUNTANT,)
 READERS = CASHIERS + (R.READER,)
 
 
@@ -84,10 +85,11 @@ def compute_account(convoy: models.Convoy, settings: models.CompanySettings) -> 
     measured = effective_l_100km(object_session(vehicle), vehicle) if vehicle is not None and object_session(vehicle) is not None else None
     consumption = measured if measured is not None else float(settings.convoy_consumption_l_100km)
     liters = _round(km * consumption / 100)
-    fuel = liters * settings.diesel_price_per_liter
+    fuel_auto = liters * settings.diesel_price_per_liter
+    fuel = convoy.fuel_cost if convoy.fuel_cost is not None else fuel_auto
     drivers = 2 if convoy.relief_driver_id else 1
-    driver_rations = drivers * days * settings.driver_daily_ration
-    conveyor_rations = days * settings.conveyor_daily_ration
+    driver_rations = convoy.driver_rations_cost if convoy.driver_rations_cost is not None else drivers * days * settings.driver_daily_ration
+    conveyor_rations = convoy.conveyor_rations_cost if convoy.conveyor_rations_cost is not None else days * settings.conveyor_daily_ration
     pct = float(convoy.commission_pct if convoy.commission_pct is not None else settings.broker_commission_pct)
     commission = _round(revenue * pct / 100) if convoy.broker_name else 0
     tolls = convoy.tolls_estimate or 0
@@ -97,11 +99,17 @@ def compute_account(convoy: models.Convoy, settings: models.CompanySettings) -> 
         {"label": "Immobilisation", "detail": f"{money(rate)} × {convoy.billed_days or 0} j", "amount": immobilization},
     ]
     charge_lines = [
-        {"label": "Carburant", "detail": f"{km} km × {consumption:g} L/100 = {liters} L × {money(settings.diesel_price_per_liter)}",
+        {"label": "Carburant",
+         "detail": "montant saisi" if convoy.fuel_cost is not None
+         else f"{km} km × {consumption:g} L/100 = {liters} L × {money(settings.diesel_price_per_liter)}",
          "amount": fuel},
-        {"label": "Ration chauffeurs", "detail": f"{drivers} × {days} j × {money(settings.driver_daily_ration)}", "amount": driver_rations},
-        {"label": "Ration convoyeur", "detail": f"1 × {days} j × {money(settings.conveyor_daily_ration)}", "amount": conveyor_rations},
-        {"label": "Péages", "detail": "estimation de l'itinéraire", "amount": tolls},
+        {"label": "Ration chauffeurs",
+         "detail": "montant saisi" if convoy.driver_rations_cost is not None else f"{drivers} × {days} j × {money(settings.driver_daily_ration)}",
+         "amount": driver_rations},
+        {"label": "Ration convoyeur",
+         "detail": "montant saisi" if convoy.conveyor_rations_cost is not None else f"1 × {days} j × {money(settings.conveyor_daily_ration)}",
+         "amount": conveyor_rations},
+        {"label": "Péages", "detail": "montant saisi", "amount": tolls},
     ]
     if convoy.broker_name:
         charge_lines.append({"label": f"Commission apporteur ({pct:g} %)", "detail": convoy.broker_name, "amount": commission})

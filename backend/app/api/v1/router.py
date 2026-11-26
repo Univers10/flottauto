@@ -34,6 +34,8 @@ api_router.include_router(reports.router, prefix="/reports", tags=["reports"], d
 api_router.include_router(fines.router, prefix="/fines", tags=["fines"], dependencies=no_field_staff + [Depends(deny_roles(R.READER, allow_read=True))])
 # Vérification publique du QR du bon de sortie (portail de la gare, sans connexion).
 api_router.include_router(departures.public_router, prefix="/exit-passes", tags=["exit-passes"])
+# Contrat de convoi ouvert par le client depuis le lien WhatsApp ou mail.
+api_router.include_router(convoys.public_router, prefix="/contracts", tags=["contracts"])
 # Pont ITTS Gestion : appels signés (HMAC) sans compte, et administration du pont.
 api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
 # Suivi GPS : écrans (comptes) et réception des positions (clé du boîtier ou du relais, sans compte).

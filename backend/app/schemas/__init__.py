@@ -1,5 +1,9 @@
 from app.schemas.schemas import (
     GpsPoint,
+    RoadDistance,
+    PublicContract,
+    ContractSettings,
+    FinePhotoRead,
     GpsIngest,
     GpsDeviceCreate,
     GpsDeviceUpdate,

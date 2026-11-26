@@ -89,7 +89,8 @@ export function canValidateNeeds(who: Who): boolean {
 /** Créer, chiffrer et valider un convoi (contrat). */
 export function canManageConvoys(who: Who): boolean {
   return rolesList(who).some((role) => {
-    return ["super_admin", "admin", "manager", "operations_supervisor"].includes(role);
+    // Le chef de gare crée les convois de sa gare (demandes de location).
+    return ["super_admin", "admin", "manager", "operations_supervisor", "station_manager"].includes(role);
   });
 }
 

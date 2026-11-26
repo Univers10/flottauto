@@ -61,3 +61,18 @@ def test_roles_and_companies(client, auth, make_user, other_company, vehicle):
     other = make_user(models.Role.MANAGER, other_company)[1]
     assert client.get(f"/api/v1/fines/{f['id']}", headers=other).status_code == 404
     assert client.get("/api/v1/fines", headers=other).json() == []
+
+
+def test_several_photos_per_fine(client, auth, vehicle):
+    h = auth(models.Role.MANAGER)
+    d = _driver(client, h)
+    f = _fine(client, h, vehicle.id, d["id"], 25_000)
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 128
+    for name in ("pv.jpg", "recu.jpg", "car.jpg"):
+        r = client.post(f"/api/v1/fines/{f['id']}/photo", headers=h, files={"file": (name, jpeg, "image/jpeg")})
+        assert r.status_code == 200, r.text
+    photos = r.json()["photos"]
+    assert len(photos) == 3 and r.json()["photo_url"] == photos[0]["file_url"]
+    after = client.delete(f"/api/v1/fines/{f['id']}/photos/{photos[0]['id']}", headers=h).json()
+    assert len(after["photos"]) == 2 and after["photo_url"] == photos[1]["file_url"]
+    assert client.delete(f"/api/v1/fines/{f['id']}", headers=h).status_code == 204

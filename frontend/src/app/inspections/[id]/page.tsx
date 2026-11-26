@@ -90,6 +90,8 @@ function formatDelay(minutes: number | null): string {
 }
 
 const SIGNATURE_ROLES: SignatureRole[] = ["station_manager", "driver", "conveyor"];
+// Le convoyeur n'est pas toujours du départ : sa signature est facultative.
+const REQUIRED_ROLES: SignatureRole[] = ["station_manager", "driver"];
 const STATUS_OPTIONS: ItemStatus[] = ["ok", "reserve", "ko"];
 const SECTIONS_WITH_NA = ["technology", "arrival"];
 
@@ -229,7 +231,7 @@ function InspectionDetail({ id }: { id: number }) {
   const canEdit = !!user && canRunInspections(rolesOf(user));
   const readOnly = insp.status === "validated" || !canEdit;
   const registration = vehicle?.registration ?? `#${insp.vehicle_id}`;
-  const signedCount = SIGNATURE_ROLES.filter((r) => insp.signatures.some((s) => s.role === r)).length;
+  const signedCount = REQUIRED_ROLES.filter((r) => insp.signatures.some((s) => s.role === r)).length;
 
   async function handleValidate() {
     setValidating(true);
@@ -325,12 +327,12 @@ function InspectionDetail({ id }: { id: number }) {
               <p className={cn("font-medium", toneText("danger"))}>{validateError}</p>
             ) : (
               <p className="text-muted-foreground">
-                <span className="font-medium text-foreground tabular">{signedCount}/3</span> signatures
-                {signedCount < 3 && " · les 3 signatures sont nécessaires pour valider"}
+                <span className="font-medium text-foreground tabular">{signedCount}/2</span> signatures obligatoires
+                {signedCount < 2 ? " · chef de gare et chauffeur doivent signer" : " · convoyeur facultatif"}
               </p>
             )}
           </div>
-          <Button size="lg" className="w-full sm:w-auto" disabled={signedCount < 3 || validating} onClick={handleValidate}>
+          <Button size="lg" className="w-full sm:w-auto" disabled={signedCount < 2 || validating} onClick={handleValidate}>
             {validating ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
             Valider l&apos;état des lieux
           </Button>
@@ -836,6 +838,7 @@ function SignaturesPanel({
   function personFor(role: SignatureRole): string | null {
     if (role === "station_manager") return userName;
     const p = role === "driver" ? insp.driver : insp.conveyor;
+    if (!p && role === "conveyor") return insp.conveyor_name;
     return p ? fullName(p) : null;
   }
 
@@ -869,7 +872,7 @@ function SignaturesPanel({
   const dialogPerson = dialogRole ? personFor(dialogRole) : null;
 
   return (
-    <Panel title="Signatures" description="3 signatures obligatoires (code PIN pour le chauffeur et le convoyeur).">
+    <Panel title="Signatures" description="Chef de gare et chauffeur obligatoires. Convoyeur facultatif (code PIN, ou seulement son nom s'il n'est pas enregistré).">
       {!readOnly && !insp.ready_to_sign && (
         <div className={cn("mb-4 rounded-lg border p-3 text-sm", toneSurface("warning"))}>
           <p className="font-medium">Signature impossible pour l&apos;instant. Il manque :</p>
@@ -898,6 +901,8 @@ function SignaturesPanel({
                 </div>
                 {signature ? (
                   <StatusBadge tone="success">Signé à {formatTime(signature.signed_at)}</StatusBadge>
+                ) : role === "conveyor" ? (
+                  <StatusBadge tone="neutral">Facultatif</StatusBadge>
                 ) : (
                   <StatusBadge tone="warning">En attente</StatusBadge>
                 )}
@@ -907,6 +912,12 @@ function SignaturesPanel({
                   role={role as "driver" | "conveyor"}
                   options={role === "driver" ? staff.driver : staff.conveyor}
                   onSelect={(personId) => mutate(() => updateInspection(insp.id, role === "driver" ? { driver_id: personId } : { conveyor_id: personId }))}
+                />
+              )}
+              {!readOnly && !signature && role === "conveyor" && !insp.conveyor_id && (
+                <ConveyorNameInput
+                  initial={insp.conveyor_name ?? ""}
+                  onSave={(name) => mutate(() => updateInspection(insp.id, { conveyor_name: name || null }))}
                 />
               )}
               {!readOnly && !signature && (
@@ -963,6 +974,23 @@ function SignaturesPanel({
         </DialogContent>
       </Dialog>
     </Panel>
+  );
+}
+
+/** Convoyeur non enregistré : son nom suffit (pas de signature par PIN). */
+function ConveyorNameInput({ initial, onSave }: { initial: string; onSave: (name: string) => void }) {
+  const [name, setName] = useState(initial);
+  return (
+    <Input
+      aria-label="Nom du convoyeur"
+      placeholder="Ou saisir le nom du convoyeur"
+      value={name}
+      maxLength={120}
+      onChange={(e) => setName(e.target.value)}
+      onBlur={() => name.trim() !== initial && onSave(name.trim())}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      className="h-9"
+    />
   );
 }
 

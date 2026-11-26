@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ApprovalChannel, Intervention, ReportSummary, ProofKind, WorkOrderLineInput, Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder } from "@/types";
+import { ApprovalChannel, Intervention, ReportSummary, ProofKind, WorkOrderLineInput, Convoy, ConvoyInput, ConvoyStatus, PaymentMethod, Departure, IttsBridgeStatus, ExitPass, ExitPassVerification, ReplacementProposal, DayReport, Inspection, InspectionKind, InspectionListItem, InspectionPhoto, ItemStatus, NeedPriority, PhotoSlot, SignatureRole, VehicleNeed, OperationsSettings, Station, AlertItem, DashboardStats, Document, Driver, FuelExpense, TollExpense, User, Vehicle, WorkOrder, PublicContract, RoadDistance } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 /** Adresse publique de l'API (instructions des boîtiers GPS). */
@@ -259,7 +259,7 @@ export const createInspection = (body: {
   driver_id?: number | null;
   conveyor_id?: number | null;
 }) => api.post<Inspection>("/inspections", body);
-export const updateInspection = (id: number, body: Partial<Pick<Inspection, "station_id" | "route_label" | "scheduled_departure_at" | "driver_id" | "conveyor_id" | "mileage" | "fuel_level" | "fuel_liters" | "observations" | "arrived_at">>) =>
+export const updateInspection = (id: number, body: Partial<Pick<Inspection, "station_id" | "route_label" | "scheduled_departure_at" | "driver_id" | "conveyor_id" | "conveyor_name" | "mileage" | "fuel_level" | "fuel_liters" | "observations" | "arrived_at">>) =>
   request<Inspection>(`/inspections/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const setInspectionItems = (id: number, items: { code: string; status: ItemStatus | null; note?: string | null }[]) =>
   api.put<Inspection>(`/inspections/${id}/items`, items);
@@ -311,8 +311,9 @@ export const createDeparture = (body: {
   distance_km?: number | null;
   driver_id?: number | null;
   conveyor_id?: number | null;
+  conveyor_name?: string | null;
 }) => api.post<Departure>("/departures", body);
-export const updateDeparture = (id: number, body: Partial<Pick<Departure, "scheduled_at" | "station_id" | "route_label" | "distance_km" | "driver_id" | "conveyor_id" | "inspection_id">>) =>
+export const updateDeparture = (id: number, body: Partial<Pick<Departure, "scheduled_at" | "station_id" | "route_label" | "distance_km" | "driver_id" | "conveyor_id" | "conveyor_name" | "inspection_id">>) =>
   request<Departure>(`/departures/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const cancelDeparture = (id: number) => api.post<Departure>(`/departures/${id}/cancel`, {});
 export const markDeparted = (id: number) => api.post<Departure>(`/departures/${id}/depart`, {});
@@ -346,6 +347,11 @@ export const createConvoy = (body: ConvoyInput & { title: string }) => api.post<
 export const updateConvoy = (id: number, body: ConvoyInput) => request<Convoy>(`/convoys/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const deleteConvoy = (id: number) => api.delete(`/convoys/${id}`);
 export const confirmConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/confirm`, {});
+export const shareContract = (id: number) => api.post<Convoy>(`/convoys/${id}/share`, {});
+export const revokeContractLink = (id: number) => api.delete<Convoy>(`/convoys/${id}/share`);
+export const getPublicContract = (token: string) => api.get<PublicContract>(`/contracts/${encodeURIComponent(token)}`);
+export const roadDistance = (origin: string, destination: string) =>
+  api.get<RoadDistance>(`/stations/distance?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`);
 export const completeConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/complete`, {});
 export const cancelConvoy = (id: number) => api.post<Convoy>(`/convoys/${id}/cancel`, {});
 export const addConvoyPayment = (id: number, body: { amount: number; method: PaymentMethod; reference?: string | null }) =>

@@ -8,6 +8,7 @@ import {
   Bell,
   Car,
   CheckCircle2,
+  ClipboardList,
   FileClock,
   RefreshCw,
   Users,
@@ -164,9 +165,9 @@ function Dashboard() {
       <h2 className="mt-8 mb-3 text-[0.9375rem] font-semibold tracking-tight">Vue d&apos;ensemble de la flotte</h2>
 
       {/* Indicateurs */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
         {loading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[118px] rounded-xl" />)
+          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[118px] rounded-xl" />)
         ) : (
           <>
             <StatCard
@@ -183,6 +184,18 @@ function Dashboard() {
               icon={Wrench}
               tone={(stats?.open_work_orders ?? openOrders) > 0 ? "warning" : undefined}
               href="/maintenance"
+            />
+            <StatCard
+              label="Besoins de car"
+              value={stats?.open_needs ?? 0}
+              hint={
+                (stats?.urgent_needs ?? 0) > 0
+                  ? `${stats?.urgent_needs} avant le départ · ${stats?.needs_to_validate ?? 0} à valider`
+                  : `${stats?.needs_to_validate ?? 0} à valider · remontés par les équipes`
+              }
+              icon={ClipboardList}
+              tone={(stats?.urgent_needs ?? 0) > 0 ? "danger" : (stats?.open_needs ?? 0) > 0 ? "warning" : undefined}
+              href="/needs"
             />
             <StatCard
               label="Coût de maintenance du mois"

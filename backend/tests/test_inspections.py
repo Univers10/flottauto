@@ -135,6 +135,17 @@ def test_validation_requires_three_signatures(client, cg, vehicle, crew):
     assert {s["role"] for s in r.json()["signatures"]} == {"station_manager", "driver", "conveyor"}
 
 
+def test_conveyor_signature_is_optional(client, cg, vehicle, crew):
+    # Pas de convoyeur enregistré sur ce départ : son nom suffit, chef de gare + chauffeur valident.
+    insp = _fill(client, cg, _create(client, cg, vehicle, crew, conveyor_id=None, conveyor_name="Traoré Issa"))
+    assert insp["conveyor_name"] == "Traoré Issa"
+    client.post(f"{API}/{insp['id']}/signatures", headers=cg, json={"role": "station_manager"})
+    assert client.post(f"{API}/{insp['id']}/validate", headers=cg).status_code == 409  # chauffeur manquant
+    client.post(f"{API}/{insp['id']}/signatures", headers=cg, json={"role": "driver", "pin": "1111"})
+    r = client.post(f"{API}/{insp['id']}/validate", headers=cg)
+    assert r.status_code == 200 and {s["role"] for s in r.json()["signatures"]} == {"station_manager", "driver"}
+
+
 def test_change_after_signing_clears_signatures(client, cg, vehicle, crew):
     insp = _fill(client, cg, _create(client, cg, vehicle, crew))
     _sign_all(client, cg, insp)

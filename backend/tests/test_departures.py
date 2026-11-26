@@ -156,9 +156,13 @@ def test_driver_rest_under_ten_hours_blocks(client, auth, cg, ready, vehicle, cr
     assert item["status"] == "blocked"
 
 
-def test_missing_conveyor_blocks(client, cg, ready):
+def test_missing_conveyor_only_warns(client, cg, ready):
+    # Pas toujours de convoyeur sur les départs : signalé, pas bloquant ; un nom saisi suffit.
     client.patch(f"{API}/{ready['id']}", headers=cg, json={"conveyor_id": None})
-    assert _item(_check(client, cg, ready["id"]), "conveyor")["status"] == "blocked"
+    assert _item(_check(client, cg, ready["id"]), "conveyor")["status"] == "warning"
+    client.patch(f"{API}/{ready['id']}", headers=cg, json={"conveyor_name": "Koné Ali"})
+    item = _item(_check(client, cg, ready["id"]), "conveyor")
+    assert item["status"] == "ok" and item["detail"] == "Koné Ali"
 
 
 def test_unfit_inspection_blocks(client, auth, cg, vehicle, crew):

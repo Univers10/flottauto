@@ -7,6 +7,20 @@ from sqlalchemy.orm import Session
 from app import models
 
 
+def _needs(db: Session, company_id: int) -> dict:
+    """Besoins de car remontés par les équipes et pas encore traités."""
+    S = models.NeedStatus
+    base = db.query(models.VehicleNeed).filter(
+        models.VehicleNeed.company_id == company_id,
+        models.VehicleNeed.status.in_([S.OPEN, S.VALIDATION_REQUESTED, S.VALIDATED, S.SCHEDULED]),
+    )
+    return {
+        "open_needs": base.count(),
+        "urgent_needs": base.filter(models.VehicleNeed.priority == models.NeedPriority.BEFORE_DEPARTURE).count(),
+        "needs_to_validate": base.filter(models.VehicleNeed.status == S.VALIDATION_REQUESTED).count(),
+    }
+
+
 def compute_dashboard_stats(db: Session, company_id: int) -> dict:
     total_vehicles = db.query(models.Vehicle).filter(models.Vehicle.company_id == company_id).count()
     available_vehicles = (
@@ -102,6 +116,7 @@ def compute_dashboard_stats(db: Session, company_id: int) -> dict:
         "critical_alerts": critical_alerts,
         "upcoming_document_expirations": upcoming_document_expirations,
         "upcoming_maintenance": upcoming_maintenance,
+        **_needs(db, company_id),
         "average_fleet_age_years": avg_age,
         "cost_this_month": cost_this_month,
     }

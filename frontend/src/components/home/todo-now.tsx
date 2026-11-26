@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellRing, BusFront, CheckCircle2, ChevronRight, Route, Wallet } from "lucide-react";
+import { BellRing, BusFront, CheckCircle2, ChevronRight, Route, Wallet, Wrench } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Panel, StatusBadge, toneSurface } from "@/components/app/primitives";
-import { api, listAllVehicles, listConvoys, listDepartures } from "@/lib/api";
+import { api, listAllVehicles, listConvoys, listDepartures, listNeeds } from "@/lib/api";
 import type { Tone } from "@/lib/labels";
 import { formatMoney } from "@/lib/format";
 import { vehicleName } from "@/lib/vehicle";
 import { cn } from "@/lib/utils";
-import type { AlertItem, Convoy, Departure, Vehicle } from "@/types";
+import type { AlertItem, Convoy, Departure, Vehicle, VehicleNeed } from "@/types";
 
 type Todo = { key: string; tone: Tone; icon: React.ElementType; title: string; detail: string; action: string; href: string; order: number };
 
@@ -28,7 +28,45 @@ function blockedCount(dep: Departure): number {
   return dep.checklist?.groups.reduce((n, g) => n + g.items.filter((i) => i.status === "blocked").length, 0) ?? 0;
 }
 
-function buildTodos(departures: Departure[], convoys: Convoy[], alerts: AlertItem[], vehicles: Map<number, Vehicle>): Todo[] {
+const MAX_NEEDS = 6;
+
+function needTodos(needs: VehicleNeed[], vehicles: Map<number, Vehicle>): Todo[] {
+  const live = needs.filter((n) => n.status !== "done" && n.status !== "cancelled");
+  const rank = (n: VehicleNeed) => (n.priority === "before_departure" ? 0 : n.status === "validation_requested" ? 1 : 2);
+  const sorted = [...live].sort((a, b) => rank(a) - rank(b) || b.created_at.localeCompare(a.created_at));
+  const todos: Todo[] = sorted.slice(0, MAX_NEEDS).map((n) => {
+    const car = `Car ${vehicleName(vehicles.get(n.vehicle_id))}`;
+    const urgent = n.priority === "before_departure";
+    const toValidate = n.status === "validation_requested";
+    return {
+      key: `need-${n.id}`,
+      tone: urgent ? "danger" : toValidate ? "warning" : "info",
+      icon: Wrench,
+      title: `${car} : ${n.title}`,
+      detail: [urgent ? "Avant le départ" : n.priority === "this_week" ? "Cette semaine" : "À chiffrer", toValidate ? "devis à valider" : null, n.origin_label]
+        .filter(Boolean)
+        .join(" · "),
+      action: toValidate ? "Valider" : "Voir le besoin",
+      href: `/needs?vehicle_id=${n.vehicle_id}`,
+      order: urgent ? 0 : toValidate ? 1 : 3,
+    };
+  });
+  if (sorted.length > MAX_NEEDS) {
+    todos.push({
+      key: "needs-more",
+      tone: "info",
+      icon: Wrench,
+      title: `${sorted.length - MAX_NEEDS} autre${sorted.length - MAX_NEEDS > 1 ? "s" : ""} besoin${sorted.length - MAX_NEEDS > 1 ? "s" : ""} de car`,
+      detail: "Remontés par les équipes",
+      action: "Tous les besoins",
+      href: "/needs",
+      order: 4,
+    });
+  }
+  return todos;
+}
+
+function buildTodos(departures: Departure[], convoys: Convoy[], alerts: AlertItem[], vehicles: Map<number, Vehicle>, needs: VehicleNeed[]): Todo[] {
   const todos: Todo[] = [];
   for (const dep of departures) {
     const car = `Car ${vehicleName(vehicles.get(dep.vehicle_id))}`;
@@ -98,6 +136,7 @@ function buildTodos(departures: Departure[], convoys: Convoy[], alerts: AlertIte
       order: 1,
     });
   }
+  todos.push(...needTodos(needs, vehicles));
   return todos.sort((a, b) => a.order - b.order);
 }
 
@@ -112,8 +151,9 @@ export function TodoNow() {
       listConvoys().catch(() => [] as Convoy[]),
       api.get<AlertItem[]>("/alerts?unread_only=true&limit=50").catch(() => [] as AlertItem[]),
       listAllVehicles().catch(() => [] as Vehicle[]),
-    ]).then(([deps, convoys, alerts, vehicles]) => {
-      if (!cancelled) setTodos(buildTodos(deps, convoys, alerts, new Map(vehicles.map((v) => [v.id, v]))));
+      listNeeds({ open_only: true }).catch(() => ({ items: [] as VehicleNeed[] })),
+    ]).then(([deps, convoys, alerts, vehicles, needs]) => {
+      if (!cancelled) setTodos(buildTodos(deps, convoys, alerts, new Map(vehicles.map((v) => [v.id, v])), needs.items));
     });
     return () => {
       cancelled = true;
@@ -121,7 +161,7 @@ export function TodoNow() {
   }, []);
 
   return (
-    <Panel title="À faire maintenant" description="Départs du jour, convois et alertes qui attendent une action." flush>
+    <Panel title="À faire maintenant" description="Départs du jour, convois, besoins de car et alertes qui attendent une action." flush>
       {todos === null ? (
         <div className="space-y-2 p-5">
           {Array.from({ length: 3 }).map((_, i) => (

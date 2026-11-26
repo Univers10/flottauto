@@ -186,7 +186,11 @@ def _crew_items(db: Session, dep: models.Departure, on: date, warn_days: int, at
             status = BLOCKED if hours < MIN_REST_HOURS else OK
             items.append(_item("driver_rest", label, status, f"{hours} h" + (f" (minimum {MIN_REST_HOURS} h)" if status == BLOCKED else "")))
     if dep.conveyor is None:
-        items.append(_item("conveyor", "Convoyeur affecté", BLOCKED, "Aucun convoyeur"))
+        # Pas toujours de convoyeur sur les départs : on le signale sans bloquer.
+        if dep.conveyor_name:
+            items.append(_item("conveyor", "Convoyeur", OK, dep.conveyor_name))
+        else:
+            items.append(_item("conveyor", "Convoyeur", WARNING, "Départ sans convoyeur"))
     else:
         items.append(_item("conveyor", "Convoyeur affecté", OK, f"{dep.conveyor.first_name} {dep.conveyor.last_name}"))
     return items
@@ -260,11 +264,12 @@ def _operations_items(dep: models.Departure) -> list[dict]:
     insp = dep.inspection
     if insp is not None and insp.status == models.InspectionStatus.VALIDATED:
         last = max((s.signed_at for s in insp.signatures), default=None)
-        signatures = _item("signatures", "Signatures : chef de gare, chauffeur, convoyeur", OK,
-                           f"3 / 3 · {last:%H:%M}" if last else "3 / 3")
+        n = len(insp.signatures)
+        signatures = _item("signatures", "Signatures : chef de gare, chauffeur (convoyeur facultatif)", OK,
+                           f"{n} signature{'s' if n > 1 else ''}" + (f" · {last:%H:%M}" if last else ""))
     else:
         signed = len(insp.signatures) if insp is not None else 0
-        signatures = _item("signatures", "Signatures : chef de gare, chauffeur, convoyeur", BLOCKED, f"{signed} / 3")
+        signatures = _item("signatures", "Signatures : chef de gare, chauffeur (convoyeur facultatif)", BLOCKED, f"{signed} / 2")
     return [signatures]
 
 

@@ -83,18 +83,40 @@ def update_fine(fine_id: int, payload: schemas.FineUpdate, db: Session = Depends
     return svc.read(svc.update_fine(db, company_id, svc.get_fine(db, company_id, fine_id), payload))
 
 
+MAX_FINE_PHOTOS = 12
+
+
 @router.post("/{fine_id}/photo", response_model=schemas.FineRead)
 def upload_fine_photo(
     fine_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
-    """Photo du procès-verbal."""
+    """Ajoute une photo (procès-verbal, reçu de paiement, car…). La première sert d'aperçu."""
     company_id = _company_id(current_user)
     f = svc.get_fine(db, company_id, fine_id)
-    old = f.photo_url
-    f.photo_url = save_image(file, company_id, "fines", fine_id, prefix="pv")
+    if len(f.photos) >= MAX_FINE_PHOTOS:
+        raise HTTPException(status_code=409, detail=f"{MAX_FINE_PHOTOS} photos au plus par contravention")
+    url = save_image(file, company_id, "fines", fine_id, prefix="pv")
+    f.photos.append(models.FinePhoto(company_id=company_id, file_url=url))
+    if not f.photo_url:
+        f.photo_url = url
     db.commit()
-    if old:
-        delete_upload(old, company_id)
+    db.refresh(f)
+    return svc.read(f)
+
+
+@router.delete("/{fine_id}/photos/{photo_id}", response_model=schemas.FineRead)
+def delete_fine_photo(fine_id: int, photo_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    company_id = _company_id(current_user)
+    f = svc.get_fine(db, company_id, fine_id)
+    photo = next((p for p in f.photos if p.id == photo_id), None)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Photo introuvable")
+    url = photo.file_url
+    f.photos.remove(photo)
+    if f.photo_url == url:
+        f.photo_url = next((p.file_url for p in f.photos), None)
+    db.commit()
+    delete_upload(url, company_id)
     db.refresh(f)
     return svc.read(f)
 
@@ -102,7 +124,8 @@ def upload_fine_photo(
 @router.delete("/{fine_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_fine(fine_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     f = svc.get_fine(db, _company_id(current_user), fine_id)
-    if f.photo_url:
-        delete_upload(f.photo_url, f.company_id)
+    urls = {p.file_url for p in f.photos} | ({f.photo_url} if f.photo_url else set())
     db.delete(f)
     db.commit()
+    for url in urls:
+        delete_upload(url, f.company_id)

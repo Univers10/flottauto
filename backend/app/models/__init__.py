@@ -3,6 +3,7 @@ from app.models.models import (
     GpsPosition,
     Fine,
     FineRepayment,
+    FinePhoto,
     FineStatus,
     RepaymentMethod,
     Role,

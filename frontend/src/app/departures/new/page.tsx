@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Calculator } from "lucide-react";
 import { AppShell, useCurrentUser } from "@/components/layout/app-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, Field, FormSection, PageHeader, Panel } from "@/components/app/primitives";
-import { api, createDeparture, listVehicles } from "@/lib/api";
+import { api, createDeparture, listVehicles, roadDistance } from "@/lib/api";
 import { canRunInspections, rolesOf } from "@/lib/roles";
 import { fullName } from "@/lib/format";
 import type { Driver, Vehicle } from "@/types";
@@ -34,6 +34,8 @@ function NewDepartureForm() {
   const [distance, setDistance] = useState("");
   const [driverId, setDriverId] = useState(NONE);
   const [conveyorId, setConveyorId] = useState(NONE);
+  const [conveyorName, setConveyorName] = useState("");
+  const [kmBusy, setKmBusy] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [conveyors, setConveyors] = useState<Driver[]>([]);
@@ -69,6 +71,25 @@ function NewDepartureForm() {
     );
   }
 
+  /** « Abobo → Odienné » : distance par la route entre la première et la dernière ville. */
+  async function computeDistance() {
+    const parts = routeLabel.split(/→|->|–|—|\s-\s|\//).map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) {
+      toast.error("Écrivez la ligne sous la forme « Abobo → Odienné »");
+      return;
+    }
+    setKmBusy(true);
+    try {
+      const d = await roadDistance(parts[0], parts[parts.length - 1]);
+      setDistance(String(d.km));
+      toast.success(`${d.from_city} → ${d.to_city} : ${d.km} km par ${d.via.length > 2 ? d.via.slice(1, -1).join(", ") : "la route directe"}`);
+    } catch (err) {
+      toast.error((err as Error).message || "Ville inconnue : saisissez les km");
+    } finally {
+      setKmBusy(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!vehicleId) {
@@ -93,6 +114,7 @@ function NewDepartureForm() {
         distance_km: km,
         driver_id: driverId !== NONE ? Number(driverId) : null,
         conveyor_id: conveyorId !== NONE ? Number(conveyorId) : null,
+        conveyor_name: conveyorId === NONE && conveyorName.trim() ? conveyorName.trim() : null,
       });
       toast.success("Départ programmé");
       router.push(`/departures/${created.id}`);
@@ -153,21 +175,27 @@ function NewDepartureForm() {
               <Field label="Ligne" htmlFor="route">
                 <Input id="route" value={routeLabel} onChange={(e) => setRouteLabel(e.target.value)} placeholder="Abidjan → Bouaké" />
               </Field>
-              <Field label="Distance de l'étape (km)" htmlFor="distance" hint="Pour vérifier le carburant">
-                <Input
-                  id="distance"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  className="tabular"
-                  value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
-                  placeholder="350"
-                />
+              <Field label="Distance de l'étape (km)" htmlFor="distance" hint="Calculée par la route depuis la ligne, ou saisie à la main">
+                <div className="flex gap-2">
+                  <Input
+                    id="distance"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    className="tabular"
+                    value={distance}
+                    onChange={(e) => setDistance(e.target.value)}
+                    placeholder="350"
+                  />
+                  <Button type="button" variant="outline" onClick={computeDistance} disabled={kmBusy || !routeLabel.trim()}>
+                    <Calculator className="size-4" />
+                    Calculer
+                  </Button>
+                </div>
               </Field>
             </FormSection>
 
-            <FormSection title="Équipage" description="Le chauffeur et le convoyeur signeront l'état des lieux avec leur code PIN.">
+            <FormSection title="Équipage" description="Le chauffeur signe l'état des lieux avec son code PIN. Le convoyeur est facultatif.">
               <Field label="Chauffeur" htmlFor="driver">
                 <Select items={personItems(drivers)} value={driverId} onValueChange={(v) => setDriverId(v ? String(v) : NONE)}>
                   <SelectTrigger id="driver">
@@ -200,6 +228,11 @@ function NewDepartureForm() {
                   </SelectContent>
                 </Select>
               </Field>
+              {conveyorId === NONE && (
+                <Field label="Nom du convoyeur" htmlFor="conveyor-name" hint="Facultatif : convoyeur non enregistré, ou laisser vide (départ sans convoyeur)">
+                  <Input id="conveyor-name" value={conveyorName} maxLength={120} onChange={(e) => setConveyorName(e.target.value)} placeholder="Koné Ali" />
+                </Field>
+              )}
             </FormSection>
           </div>
 

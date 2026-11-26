@@ -136,7 +136,7 @@ class OperationsSettingsRead(BaseModel):
     immobilization_daily_rate: int
     document_warning_days: int
     oil_change_warning_km: int
-    convoy_consumption_l_100km: int = 33
+    convoy_consumption_l_100km: int = 40
     convoy_number_prefix: str = "CV"
     legal_name: str | None = None
     legal_details: str | None = None
@@ -639,6 +639,9 @@ class DashboardStats(BaseModel):
     critical_alerts: int
     upcoming_document_expirations: int
     upcoming_maintenance: int
+    open_needs: int = 0
+    urgent_needs: int = 0
+    needs_to_validate: int = 0
     average_fleet_age_years: float | None
     cost_this_month: Decimal | None
 
@@ -654,6 +657,7 @@ class InspectionCreate(BaseModel):
     scheduled_departure_at: datetime | None = None
     driver_id: int | None = None
     conveyor_id: int | None = None
+    conveyor_name: str | None = Field(None, max_length=120)
 
 
 class InspectionUpdate(BaseModel):
@@ -662,6 +666,7 @@ class InspectionUpdate(BaseModel):
     scheduled_departure_at: datetime | None = None
     driver_id: int | None = None
     conveyor_id: int | None = None
+    conveyor_name: str | None = Field(None, max_length=120)
     mileage: int | None = Field(None, ge=0, le=5_000_000)
     fuel_level: FuelLevel | None = None
     fuel_liters: int | None = Field(None, ge=0, le=2000)
@@ -730,6 +735,7 @@ class InspectionRead(BaseModel):
     scheduled_departure_at: datetime | None
     driver_id: int | None
     conveyor_id: int | None
+    conveyor_name: str | None = None
     driver: PersonSummary | None = None
     conveyor: PersonSummary | None = None
     mileage: int | None
@@ -826,6 +832,7 @@ class DepartureCreate(BaseModel):
     distance_km: int | None = Field(None, ge=1, le=5000)
     driver_id: int | None = None
     conveyor_id: int | None = None
+    conveyor_name: str | None = Field(None, max_length=120)
 
 
 class DepartureUpdate(BaseModel):
@@ -835,6 +842,7 @@ class DepartureUpdate(BaseModel):
     distance_km: int | None = Field(None, ge=1, le=5000)
     driver_id: int | None = None
     conveyor_id: int | None = None
+    conveyor_name: str | None = Field(None, max_length=120)
     inspection_id: int | None = None
 
 
@@ -872,6 +880,7 @@ class DepartureRead(BaseModel):
     distance_km: int | None
     driver_id: int | None
     conveyor_id: int | None
+    conveyor_name: str | None = None
     driver: PersonSummary | None = None
     conveyor: PersonSummary | None = None
     inspection_id: int | None
@@ -1080,6 +1089,10 @@ class ConvoyBase(BaseModel):
     billed_days: int | None = Field(None, ge=0, le=365)
     daily_rate: int | None = Field(None, ge=0, le=100_000_000)
     tolls_estimate: int | None = Field(None, ge=0, le=100_000_000)
+    # Charges réelles saisies (vide = calcul automatique).
+    fuel_cost: int | None = Field(None, ge=0, le=100_000_000)
+    driver_rations_cost: int | None = Field(None, ge=0, le=100_000_000)
+    conveyor_rations_cost: int | None = Field(None, ge=0, le=100_000_000)
     vehicle_id: int | None = None
     backup_vehicle_id: int | None = None
     driver_id: int | None = None
@@ -1171,6 +1184,10 @@ class ConvoyRead(BaseModel):
     billed_days: int
     daily_rate: int | None
     tolls_estimate: int
+    fuel_cost: int | None = None
+    driver_rations_cost: int | None = None
+    conveyor_rations_cost: int | None = None
+    share_token: str | None = None
     vehicle_id: int | None
     backup_vehicle_id: int | None
     driver_id: int | None
@@ -1186,6 +1203,31 @@ class ConvoyRead(BaseModel):
     departure_id: int | None = None
     vehicle_label: str | None = None
     crew_labels: dict[str, str] = {}
+
+
+class ContractSettings(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    legal_name: str | None = None
+    legal_details: str | None = None
+    legal_representative: str | None = None
+    contract_city: str | None = None
+    hotline: str | None = None
+
+
+class PublicContract(BaseModel):
+    """Contrat ouvert depuis le lien envoyé au client : sans les charges ni la marge."""
+
+    convoy: ConvoyRead
+    settings: ContractSettings
+
+
+class RoadDistance(BaseModel):
+    from_city: str
+    to_city: str
+    km: int
+    via: list[str]
+    method: Literal["road", "estimate"]
 
 
 # Contraventions et dette du chauffeur
@@ -1215,6 +1257,14 @@ class FineUpdate(BaseModel):
     notes: str | None = None
 
 
+class FinePhotoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    file_url: str
+    created_at: datetime | None = None
+
+
 class FineRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -1229,6 +1279,7 @@ class FineRead(BaseModel):
     status: FineStatus
     paid_on: date | None
     photo_url: str | None
+    photos: list[FinePhotoRead] = []
     notes: str | None
     created_at: datetime
     vehicle_label: str | None = None

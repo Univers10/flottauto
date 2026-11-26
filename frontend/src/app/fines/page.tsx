@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Camera, CircleAlert, HandCoins, Plus, ReceiptText, Wallet } from "lucide-react";
+import { Camera, CircleAlert, HandCoins, Plus, ReceiptText, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ export default function FinesPage() {
   const [fineOpen, setFineOpen] = useState(false);
   const [editing, setEditing] = useState<Fine | null>(null);
   const [form, setForm] = useState(emptyFine);
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [repay, setRepay] = useState<FineBalance | null>(null);
@@ -89,7 +89,7 @@ export default function FinesPage() {
   function openNew() {
     setEditing(null);
     setForm({ ...emptyFine, fine_date: today() });
-    setPhoto(null);
+    setPhotos([]);
     setFineOpen(true);
   }
 
@@ -106,7 +106,7 @@ export default function FinesPage() {
       status: f.status,
       notes: f.notes ?? "",
     });
-    setPhoto(null);
+    setPhotos([]);
     setFineOpen(true);
   }
 
@@ -130,9 +130,9 @@ export default function FinesPage() {
         notes: form.notes.trim() || null,
       };
       const saved = editing ? await api.put<Fine>(`/fines/${editing.id}`, body) : await api.post<Fine>("/fines", body);
-      if (photo) {
+      for (const file of photos) {
         const fd = new FormData();
-        fd.append("file", photo);
+        fd.append("file", file);
         await uploadFile<Fine>(`/fines/${saved.id}/photo`, fd);
       }
       toast.success(editing ? "Contravention modifiée" : "Contravention enregistrée");
@@ -142,6 +142,17 @@ export default function FinesPage() {
       toast.error((err as Error).message || "Enregistrement impossible");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removePhoto(photoId: number) {
+    if (!editing) return;
+    try {
+      const updated = await api.delete<Fine>(`/fines/${editing.id}/photos/${photoId}`);
+      setEditing(updated);
+      setFines((list) => list.map((f) => (f.id === updated.id ? updated : f)));
+    } catch (err) {
+      toast.error((err as Error).message || "Suppression impossible");
     }
   }
 
@@ -284,7 +295,7 @@ export default function FinesPage() {
                     <p className="font-medium">{f.reason}</p>
                     <p className="text-xs text-muted-foreground">
                       {f.place || "—"}
-                      {f.photo_url ? " · PV joint" : ""}
+                      {f.photos.length ? ` · ${f.photos.length} photo${f.photos.length > 1 ? "s" : ""}` : ""}
                     </p>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{f.vehicle_label ?? "—"}</TableCell>
@@ -376,15 +387,43 @@ export default function FinesPage() {
                   onCheckedChange={(v) => setForm({ ...form, charged_to_driver: v })}
                 />
               </label>
-              <Field label="Photo du procès-verbal" htmlFor="pv" className="sm:col-span-2">
-                <div className="flex items-center gap-3">
-                  <Input id="pv" type="file" accept="image/*" capture="environment" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-                  {editing?.photo_url ? (
-                    <a href={assetUrl(editing.photo_url) ?? undefined} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-1 text-sm text-primary hover:underline">
-                      <Camera className="size-4" />
-                      Voir
-                    </a>
-                  ) : null}
+              <Field label="Photos" htmlFor="pv" className="sm:col-span-2" hint="Procès-verbal, reçu de paiement, car… (12 au plus)">
+                <div className="space-y-3">
+                  {editing && editing.photos.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {editing.photos.map((ph) => (
+                        <div key={ph.id} className="relative">
+                          <a href={assetUrl(ph.file_url) ?? undefined} target="_blank" rel="noreferrer" className="block">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={assetUrl(ph.file_url) ?? undefined} alt="Photo de la contravention" className="size-20 rounded-md border object-cover" />
+                          </a>
+                          <button
+                            type="button"
+                            aria-label="Supprimer la photo"
+                            onClick={() => removePhoto(ph.id)}
+                            className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full border bg-background shadow-sm hover:bg-muted"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <Camera className="size-4 shrink-0 text-muted-foreground" />
+                    <Input
+                      id="pv"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => setPhotos(Array.from(e.target.files ?? []))}
+                    />
+                  </div>
+                  {photos.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {photos.length} photo{photos.length > 1 ? "s" : ""} ajoutée{photos.length > 1 ? "s" : ""} à l&apos;enregistrement
+                    </p>
+                  )}
                 </div>
               </Field>
               <Field label="Notes" htmlFor="notes" className="sm:col-span-2">

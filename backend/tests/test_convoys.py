@@ -56,6 +56,8 @@ def _create(client, headers, **kw):
 
 
 def test_account_matches_mockup(client, auth, vehicle, crew, relief):
+    # Chiffres de la maquette, faite avec 33 L/100 km (la valeur ITTS par défaut est maintenant 40).
+    client.put("/api/v1/settings/operations", headers=auth(R.ADMIN), json={"convoy_consumption_l_100km": 33})
     convoy = _create(client, auth(R.OPERATIONS_SUPERVISOR), crew=crew, vehicle=vehicle, relief_driver_id=relief["id"])
     a = convoy["account"]
     assert convoy["number"] == f"CV-{date.today().year + 1}-001" and convoy["status"] == "draft"
@@ -148,7 +150,9 @@ def test_validation_and_roles(client, auth, vehicle, crew, make_user, other_comp
     same = {"driver_id": crew["driver"]["id"], "relief_driver_id": crew["driver"]["id"]}
     assert client.post(API, headers=admin, json=_body(**same)).status_code == 400
     assert client.post(API, headers=admin, json=_body(return_date="2000-01-01")).status_code == 400
-    assert client.post(API, headers=auth(R.STATION_MANAGER), json=_body()).status_code == 403
+    assert client.post(API, headers=auth(R.MECHANIC), json=_body()).status_code == 403
+    # Le chef de gare crée les convois (demandes de location de sa gare).
+    assert client.post(API, headers=auth(R.STATION_MANAGER), json=_body()).status_code == 201
     convoy = _create(client, admin)
     assert client.get(API, headers=auth(R.READER)).status_code == 200
     assert client.get(f"{API}?q=Camara", headers=admin).json()[0]["id"] == convoy["id"]
@@ -235,3 +239,38 @@ def test_payment_keeps_the_agent_name_and_caisse_can_collect(client, auth, vehic
     assert r.json()["payments"][0]["recorded_by_name"]
     assert client.post(f"{API}/{convoy['id']}/payments", headers=auth(R.READER),
                        json={"amount": 1, "method": "cash"}).status_code == 403
+
+
+def test_default_consumption_is_40_and_typed_charges_win(client, auth):
+    cg = auth(R.STATION_MANAGER)
+    convoy = _create(client, cg)
+    fuel = next(line for line in convoy["account"]["charge_lines"] if line["label"] == "Carburant")
+    assert "40 L/100" in fuel["detail"]
+    typed = client.patch(f"{API}/{convoy['id']}", headers=cg, json={
+        "fuel_cost": 500_000, "driver_rations_cost": 60_000, "conveyor_rations_cost": 0, "tolls_estimate": 24_000,
+    }).json()
+    charges = {line["label"]: line for line in typed["account"]["charge_lines"]}
+    assert charges["Carburant"]["amount"] == 500_000 and charges["Carburant"]["detail"] == "montant saisi"
+    assert charges["Ration chauffeurs"]["amount"] == 60_000 and charges["Ration convoyeur"]["amount"] == 0
+    assert charges["Péages"]["amount"] == 24_000
+    back = client.patch(f"{API}/{convoy['id']}", headers=cg, json={"fuel_cost": None}).json()
+    assert next(line for line in back["account"]["charge_lines"] if line["label"] == "Carburant")["amount"] != 500_000
+
+
+def test_contract_link_is_public_without_charges(client, auth, vehicle, crew):
+    admin = auth(R.ADMIN)
+    _comply_vehicle(client, admin, vehicle.id)
+    _comply_crew(client, admin, crew)
+    convoy = _create(client, admin, crew=crew, vehicle=vehicle)
+    assert client.post(f"{API}/{convoy['id']}/share", headers=admin).status_code == 409  # brouillon
+    assert client.post(f"{API}/{convoy['id']}/confirm", headers=admin).status_code == 200
+    token = client.post(f"{API}/{convoy['id']}/share", headers=admin).json()["share_token"]
+    assert token
+    public = client.get(f"/api/v1/contracts/{token}")
+    assert public.status_code == 200
+    body = public.json()
+    assert body["convoy"]["number"] == convoy["number"] and body["convoy"]["account"]["charge_lines"] == []
+    assert body["convoy"]["account"]["margin"] == 0 and body["convoy"]["notes"] is None and body["convoy"]["share_token"] is None
+    assert client.get("/api/v1/contracts/wrong-token-wrong-token").status_code == 404
+    client.delete(f"{API}/{convoy['id']}/share", headers=admin)
+    assert client.get(f"/api/v1/contracts/{token}").status_code == 404

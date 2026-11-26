@@ -280,6 +280,9 @@ export interface DashboardStats {
   critical_alerts: number;
   upcoming_document_expirations: number;
   upcoming_maintenance: number;
+  open_needs: number;
+  urgent_needs: number;
+  needs_to_validate: number;
   average_fleet_age_years: number | null;
   cost_this_month: string | null;
 }
@@ -377,6 +380,7 @@ export interface Inspection {
   scheduled_departure_at: string | null;
   driver_id: number | null;
   conveyor_id: number | null;
+  conveyor_name: string | null;
   driver: PersonSummary | null;
   conveyor: PersonSummary | null;
   mileage: number | null;
@@ -481,6 +485,7 @@ export interface Departure {
   distance_km: number | null;
   driver_id: number | null;
   conveyor_id: number | null;
+  conveyor_name: string | null;
   driver: PersonSummary | null;
   conveyor: PersonSummary | null;
   inspection_id: number | null;
@@ -624,6 +629,10 @@ export interface Convoy {
   billed_days: number;
   daily_rate: number | null;
   tolls_estimate: number;
+  fuel_cost: number | null;
+  driver_rations_cost: number | null;
+  conveyor_rations_cost: number | null;
+  share_token: string | null;
   vehicle_id: number | null;
   backup_vehicle_id: number | null;
   driver_id: number | null;
@@ -642,7 +651,7 @@ export interface Convoy {
 }
 
 export type ConvoyInput = Partial<Omit<Convoy, "id" | "number" | "status" | "segments" | "payments" | "account" | "vehicle_documents"
-  | "departure_id" | "vehicle_label" | "crew_labels" | "contract_generated_at" | "created_at">> & { segments?: ConvoySegment[] };
+  | "departure_id" | "vehicle_label" | "crew_labels" | "contract_generated_at" | "created_at" | "share_token">> & { segments?: ConvoySegment[] };
 
 // ───────────────────────── Rapports ─────────────────────────
 export interface ReportVehicleRow {
@@ -744,10 +753,30 @@ export interface Fine {
   status: FineStatus;
   paid_on: string | null;
   photo_url: string | null;
+  photos: FinePhoto[];
   notes: string | null;
   created_at: string;
   vehicle_label: string | null;
   driver_name: string | null;
+}
+
+export interface FinePhoto {
+  id: number;
+  file_url: string;
+  created_at: string | null;
+}
+
+export interface RoadDistance {
+  from_city: string;
+  to_city: string;
+  km: number;
+  via: string[];
+  method: "road" | "estimate";
+}
+
+export interface PublicContract {
+  convoy: Convoy;
+  settings: Pick<OperationsSettings, "legal_name" | "legal_details" | "legal_representative" | "contract_city" | "hotline">;
 }
 
 export interface FineBalance {
