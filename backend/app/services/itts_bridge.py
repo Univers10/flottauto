@@ -331,7 +331,20 @@ def _apply_rental(db: Session, cid: int, event: schemas.IttsEvent) -> str:
         seats_sold=r.seats,
         notes=notes,
     )
-    convoy.segments = [models.ConvoySegment(position=1, from_label=r.from_, to_label=r.to, km=0, price_per_seat=r.price_per_seat)]
+    charges = r.charges or schemas.IttsRentalCharges()
+    convoy.tolls_estimate = charges.tolls or 0
+    convoy.fuel_cost = charges.fuel
+    convoy.driver_rations_cost = charges.driver
+    convoy.conveyor_rations_cost = charges.conveyor
+    # Aller (prix des places) et retour à vide du car : les km de route servent au carburant.
+    from app.services.geo import road_distance
+
+    road = road_distance(r.from_, r.to)
+    km = road["km"] if road else 0
+    convoy.segments = [
+        models.ConvoySegment(position=1, from_label=r.from_, to_label=r.to, km=km, price_per_seat=r.price_per_seat),
+        models.ConvoySegment(position=2, from_label=r.to, to_label=r.from_, km=km, price_per_seat=0),
+    ]
     if r.deposit > 0:
         convoy.payments.append(models.ConvoyPayment(
             amount=r.deposit, method=r.deposit_method or models.PaymentMethod.CASH,
@@ -540,6 +553,28 @@ def authorization(db: Session, itts_departure_id: str, bus_id: str) -> dict:
         "valid_until": dep.exit_pass_valid_until.replace(tzinfo=timezone.utc) if dep.exit_pass_valid_until else None,
         "url": url,
     }
+
+
+def crew(db: Session, cid: int) -> list[dict]:
+    """Chauffeurs et convoyeurs actifs de FlottAuto, pour la liste d'ITTS Gestion (ceux déjà reliés gardent leur id ITTS)."""
+    people = (
+        db.query(models.Driver)
+        .filter(models.Driver.company_id == cid, models.Driver.is_active.is_(True),
+                models.Driver.staff_type.in_([models.StaffType.DRIVER, models.StaffType.CONVEYOR]))
+        .order_by(models.Driver.last_name, models.Driver.first_name)
+        .limit(2000)
+        .all()
+    )
+    return [
+        {
+            "id": d.id,
+            "name": f"{d.first_name} {d.last_name}".strip(),
+            "phone": d.phone,
+            "role": "CHAUFFEUR" if d.staff_type == models.StaffType.DRIVER else "CONVOYEUR",
+            "itts_staff_id": d.itts_staff_id,
+        }
+        for d in people
+    ]
 
 
 def status(db: Session, cid: int) -> dict:

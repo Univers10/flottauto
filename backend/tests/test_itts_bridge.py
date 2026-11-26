@@ -423,7 +423,10 @@ def test_rental_request_becomes_a_draft_convoy_with_its_deposit(client, db, auth
     cv = convoys[0]
     assert cv.status == models.ConvoyStatus.DRAFT and cv.client_name == "Paroisse Saint-Paul" and cv.seats_sold == 60
     assert cv.purpose == models.ConvoyPurpose.PILGRIMAGE and "LOC-2026-001" in cv.notes and "Awa Guichet" in cv.notes
-    assert [(s.from_label, s.to_label, s.price_per_seat) for s in cv.segments] == [("Abidjan", "Yamoussoukro", 8000)]
+    # Aller payant + retour à vide, km calculés par la route (Abidjan → Yamoussoukro : 3 + 12 + 195 + 40 km).
+    assert [(s.from_label, s.to_label, s.km, s.price_per_seat) for s in cv.segments] == [
+        ("Abidjan", "Yamoussoukro", 250, 8000), ("Yamoussoukro", "Abidjan", 250, 0)]
+    assert cv.fuel_cost is None and cv.tolls_estimate == 0
     assert [(p.amount, p.method) for p in cv.payments] == [(200000, models.PaymentMethod.WAVE)]
 
     admin = auth(R.ADMIN)
@@ -435,3 +438,23 @@ def test_rental_request_without_body_is_rejected(client, company):
     event = _rental()
     del event["rental"]
     assert _post_event(client, event).status_code == 422
+
+
+def test_crew_list_for_itts(client, auth, company):
+    h = auth(models.Role.ADMIN)
+    client.post("/api/v1/drivers", headers=h, json={"first_name": "Ballo", "last_name": "Seydou", "phone": "0707000001"})
+    client.post("/api/v1/drivers", headers=h, json={"first_name": "Koné", "last_name": "Ali", "staff_type": "conveyor"})
+    path = "/api/v1/integrations/itts/crew"
+    assert client.get(path).status_code == 401
+    crew = client.get(path, headers=_signed("GET", path)).json()["crew"]
+    roles = {c["name"]: c["role"] for c in crew}
+    assert roles == {"Ballo Seydou": "CHAUFFEUR", "Koné Ali": "CONVOYEUR"}
+    assert all(c["itts_staff_id"] is None for c in crew)
+
+
+def test_rental_request_carries_the_charges_typed_at_the_station(client, db, company):
+    event = _rental()
+    event["rental"]["charges"] = {"tolls": 24000, "fuel": 300000, "driver": 50000, "conveyor": None}
+    assert _post_event(client, event).json()["status"] == "processed"
+    cv = db.query(models.Convoy).one()
+    assert (cv.tolls_estimate, cv.fuel_cost, cv.driver_rations_cost, cv.conveyor_rations_cost) == (24000, 300000, 50000, None)

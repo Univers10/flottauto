@@ -1,6 +1,7 @@
 from app.schemas.schemas import (
     GpsPoint,
     RoadDistance,
+    IttsRentalCharges,
     PublicContract,
     ContractSettings,
     FinePhotoRead,

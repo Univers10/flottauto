@@ -990,6 +990,13 @@ class IttsRentalClient(BaseModel):
     phone: str = Field(..., min_length=1, max_length=50)
 
 
+class IttsRentalCharges(BaseModel):
+    tolls: int | None = Field(None, ge=0, le=100_000_000)
+    fuel: int | None = Field(None, ge=0, le=100_000_000)
+    driver: int | None = Field(None, ge=0, le=100_000_000)
+    conveyor: int | None = Field(None, ge=0, le=100_000_000)
+
+
 class IttsRental(IttsRef):
     """Demande de location saisie en gare dans ITTS Gestion : devient un convoi brouillon."""
 
@@ -1004,6 +1011,7 @@ class IttsRental(IttsRef):
     price_per_seat: int = Field(..., ge=0, le=10_000_000)
     deposit: int = Field(0, ge=0, le=1_000_000_000)
     deposit_method: PaymentMethod | None = None
+    charges: IttsRentalCharges | None = None
     notes: str | None = Field(None, max_length=500)
     station: IttsStation | None = None
     requested_by: IttsPerson | None = None

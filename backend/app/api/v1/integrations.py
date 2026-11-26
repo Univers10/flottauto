@@ -40,6 +40,12 @@ def departure_authorization(
     return svc.authorization(db, itts_departure_id, bus_id)
 
 
+@router.get("/itts/crew")
+def crew(_raw: bytes = Depends(svc.verify_request), db: Session = Depends(get_db)):
+    """Interrogé par ITTS : les chauffeurs et convoyeurs saisis dans FlottAuto rejoignent sa liste du personnel."""
+    return {"crew": svc.crew(db, svc.company_id())}
+
+
 # ───────────── Administration (Paramètres → Intégration ITTS) ─────────────
 
 @router.get("/itts/status")
